@@ -195,6 +195,27 @@ Three further properties:
 - **`**` is only recursive as a standalone path component.** `./fsdb/DE-LANRWR**/*.htr.txt` reads the `**` exactly like `*`, descending a single level, which is what the fsdb layout needs. For unbounded depth write `./fsdb/**/*.htr.txt`. FLAME prints a note when it sees a doubled star that is not a standalone component.
 - **The year comes from the file name** and puts the earlier text of a pair on the left. A name that opens with four digits and an underscore (`1182_...`), or with `undated_`, is dated by that alone; any other name is dated by its first number from 1000 to 2999.
 
+### Charters from the Monasterium NG API
+
+`flame_ddp.py` fetches charters from the Monasterium NG API into a new folder that FLAME reads like
+any other corpus. Each charter is named by its document id, its atom id or its Monasterium URL, in
+any mix:
+
+```bash
+python flame_ddp.py -api https://host/api/v1 -out ./corpus \
+    -ids 68341d4b2108faa659ab4381514ffcc4 https://www.monasterium.net/mom/Fontenay/x1203_d1e164108/charter
+python flame.py -input_path ./corpus
+```
+
+- `-ids_file` reads the values from a file, one or more per line, `#` for comments.
+- `-text` picks the text: `tenor` (default) or `abstract`. A charter without that text is skipped and listed.
+- `-dry_run` fetches and reports, and writes nothing. The output folder must be new or empty.
+- Each text is written as `<year>_<document id>.txt`, or `undated_<document id>.txt`. `manifest.tsv`
+  gives the atom id, the year, the text hash and the Monasterium URL per file, so every name in the
+  reports leads back to its charter; `fetch.json` records the API, its version and what was not found.
+
+The tests need the development requirements: `pip install -r requirements-dev.txt`, then `pytest`.
+
 ### All CLI Arguments
 
 | Parameter | Default | Description |

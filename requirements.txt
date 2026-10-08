@@ -8,6 +8,8 @@ scikit-learn
 scipy
 tqdm
 tokenizers
+# flame_ddp.py: the Monasterium NG API client
+httpx
 # Needed by the default -cluster_linkage louvain. Imported lazily, so its absence
 # only fails when the clustering runs, with an explanatory message.
 networkx

@@ -5,6 +5,9 @@ import queue
 import sys
 import os
 import webbrowser
+from pathlib import Path
+import httpx
+import flame_ddp
 from flame import Flame, DEFAULT_PARAMS, SimilarityVisualizer
 from argparse import Namespace
 
@@ -59,6 +62,9 @@ class FlameGUI(tk.Tk):
         self.notebook.add(tab_core, text="1. Data & Core Setup")
         self.notebook.add(tab_nlp, text="2. Normalization & Philology")
         self.notebook.add(tab_reports, text="3. Auto-Tune & Outputs")
+        tab_fetch = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(tab_fetch, text="4. Fetch from Monasterium")
+        self.create_fetch_tab(tab_fetch)
 
         # ==================== TAB 1: CORE SETUP ====================
         paths_frame = ttk.LabelFrame(tab_core, text="Corpus Directory Selection", padding="10")
@@ -283,6 +289,77 @@ class FlameGUI(tk.Tk):
         """Enables/disables bigram normalization entries based on checkbox state."""
         state = tk.NORMAL if self.params['bigram_normalization_enabled'].get() else tk.DISABLED
         self.bigram_rules_entry.config(state=state)
+
+    def create_fetch_tab(self, tab):
+        """Builds the tab that fetches charters from the Monasterium NG API into a new corpus folder."""
+        frame = ttk.LabelFrame(tab, text="Charters from the Monasterium NG API", padding="10")
+        frame.pack(fill=tk.X, pady=5)
+        frame.columnconfigure(1, weight=1)
+        self.fetch_api = tk.StringVar()
+        self.fetch_text = tk.StringVar(value="tenor")
+        self.fetch_out = tk.StringVar()
+
+        ttk.Label(frame, text="API Base URL (ending in /api/v1):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=4)
+        ttk.Entry(frame, textvariable=self.fetch_api, width=55).grid(row=0, column=1, sticky=tk.EW, padx=5, pady=4)
+        ttk.Label(frame, text="Charters (ids, atom ids or URLs,\none or more per line):").grid(
+            row=1, column=0, sticky=tk.NW, padx=5, pady=4)
+        self.fetch_ids = tk.Text(frame, height=6, width=55)
+        self.fetch_ids.grid(row=1, column=1, columnspan=2, sticky=tk.EW, padx=5, pady=4)
+        ttk.Label(frame, text="Text:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=4)
+        ttk.Combobox(frame, textvariable=self.fetch_text, values=['tenor', 'abstract'], state='readonly',
+                     width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=4)
+        ttk.Label(frame, text="New Corpus Folder:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=4)
+        ttk.Entry(frame, textvariable=self.fetch_out, width=55).grid(row=3, column=1, sticky=tk.EW, padx=5, pady=4)
+        ttk.Button(frame, text="Browse Folder...", command=self.browse_fetch_folder).grid(
+            row=3, column=2, sticky=tk.W, padx=5, pady=4)
+        self.fetch_button = ttk.Button(frame, text="Fetch Charters", command=self.start_fetch_thread)
+        self.fetch_button.grid(row=4, column=0, sticky=tk.W, padx=5, pady=8)
+        ttk.Label(frame, text="The folder then becomes the Primary Corpus Path on tab 1; manifest.tsv in it"
+                              " names the charter behind each file.",
+                  font=("TkDefaultFont", 9, "italic")).grid(row=4, column=1, columnspan=2, sticky=tk.W, padx=5)
+
+    def browse_fetch_folder(self):
+        directory = filedialog.askdirectory(title="Select an Empty Folder for the Fetched Charters")
+        if directory:
+            self.fetch_out.set(directory)
+
+    def start_fetch_thread(self):
+        """Fetches the charters on a worker thread, so the window stays responsive."""
+        api = self.fetch_api.get().strip()
+        out = self.fetch_out.get().strip()
+        values = flame_ddp.read_values([self.fetch_ids.get("1.0", tk.END)], "")
+        if not (api and out and values):
+            self.log_queue.put("\nGive the API base URL, at least one charter and a new corpus folder.\n")
+            return
+        self.fetch_button.config(state="disabled", text="Fetching...")
+        self.fetch_results = queue.Queue()
+        threading.Thread(target=self.run_fetch, args=(api, values, out, self.fetch_text.get()), daemon=True).start()
+        self.after(200, self.finish_fetch)
+
+    def run_fetch(self, api, values, out, text_kind):
+        """Runs one fetch on the worker thread and hands the folder to the main thread when it holds a text."""
+        fetched = None
+        sys.stdout = self
+        try:
+            if flame_ddp.run(api, values, Path(out), text_kind).entries:
+                fetched = out
+        except (httpx.HTTPError, FileExistsError) as error:
+            self.log_queue.put(f"\nFetch failed: {error}\n")
+        finally:
+            sys.stdout = sys.__stdout__
+            self.fetch_results.put(fetched)
+
+    def finish_fetch(self):
+        """Waits on the main thread for the fetch, then sets its folder as the primary corpus."""
+        try:
+            fetched = self.fetch_results.get_nowait()
+        except queue.Empty:
+            self.after(200, self.finish_fetch)
+            return
+        self.fetch_button.config(state="normal", text="Fetch Charters")
+        if fetched:
+            self.params['input_path'].set(fetched)
+            self.notebook.select(0)
 
     def create_path_entry(self, parent, param_name, label_text, row):
         """Creates a standard path field workspace wrapper configuration."""

@@ -214,6 +214,9 @@ python flame.py -input_path ./corpus
   gives the atom id, the year, the text hash and the Monasterium URL per file, so every name in the
   reports leads back to its charter; `fetch.json` records the API, its version and what was not found.
 
+In the GUI, the tab **4. Fetch from Monasterium** does the same and then sets the folder as the
+primary corpus path.
+
 The tests need the development requirements: `pip install -r requirements-dev.txt`, then `pytest`.
 
 ### All CLI Arguments

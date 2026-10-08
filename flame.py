@@ -1294,6 +1294,12 @@ class SimilarityVisualizer:
 
     @staticmethod
     def _extract_year_from_filename(filename: str) -> int:
+        """The year a file name states; 9999 when it states none."""
+        # A leading year or "undated" decides alone, so the digits of an
+        # identifier after it are never read as a year.
+        leading = re.match(r'(\d{4}|undated)_', filename)
+        if leading:
+            return 9999 if leading.group(1) == 'undated' else int(leading.group(1))
         match = re.search(r'(?<!\d)(1\d{3}|2\d{3})(?!\d)', filename)
         if match:
             return int(match.group(1))

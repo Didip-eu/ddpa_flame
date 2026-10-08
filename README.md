@@ -189,10 +189,11 @@ ambiguous there, so **every report names a text by its path relative to the inpu
 `DE-LANRWR001/text.htr.txt`. When the input is flat, that relative path *is* the filename, so existing
 outputs are unchanged.
 
-Two further properties:
+Three further properties:
 
 - **The file list is sorted**, so corpus order — and with it the row/column order of the distance matrix and the heatmap — is reproducible rather than following the filesystem.
 - **`**` is only recursive as a standalone path component.** `./fsdb/DE-LANRWR**/*.htr.txt` reads the `**` exactly like `*`, descending a single level, which is what the fsdb layout needs. For unbounded depth write `./fsdb/**/*.htr.txt`. FLAME prints a note when it sees a doubled star that is not a standalone component.
+- **The year comes from the file name** and puts the earlier text of a pair on the left. A name that opens with four digits and an underscore (`1182_...`), or with `undated_`, is dated by that alone; any other name is dated by its first number from 1000 to 2999.
 
 ### All CLI Arguments
 

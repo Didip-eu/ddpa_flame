@@ -70,7 +70,7 @@ skip-grams for historical text.
 
 ## Installation
 
-requirements: python 3.9 min, pip 26.1 min
+requirements: Python 3.12 or later, pip 26.1 min
 
 A Python virtual environment is strongly recommended.
 
@@ -145,19 +145,15 @@ one button per generated report opens it directly.
 seven it does not expose are exactly the clustering internals — `core_anchors`, `core_anchor_window`,
 `core_max_tokens`, `core_gap_tolerance`, `core_min_tokens`, `core_identity_threshold` and
 `min_duplicate_tokens`. Those keep their `DEFAULT_PARAMS` value, so the GUI and the CLI agree on the
-defaults; changing one means the command line or editing `flame.py`. The boolean `gen_*` switches are
-the mirror image: the command line can turn those *on*, never off — see
-[Command-Line Interface](#command-line-interface-cli).
+defaults; changing one means the command line or editing `flame.py`.
 
 ### Command-Line Interface (CLI)
 
 Arguments use a **single leading dash** (`-input_path`, not `--input_path`), in either
 the `-param value` or `-param=value` form.
 
-Boolean switches are **presence switches**: `-auto_tune` on its own turns the option on, and so do
-`-auto_tune False`, `-auto_tune false` and `-auto_tune 0` — the value is ignored. A boolean that
-defaults to `True` (the `gen_*` report switches) therefore cannot be switched off from the command
-line; use the GUI checkbox or change the default in `DEFAULT_PARAMS` in `flame.py`.
+A boolean switch on its own turns the option on (`-auto_tune`); with a value it is set either way
+(`-gen_heatmap false`, `-deduplicate=true`; also `yes`, `no`, `1`, `0`).
 
 To see all available options and their defaults, run:
 
@@ -227,10 +223,10 @@ Two further properties:
 | `max_gap_words` | `5` | Maximum structural token length allowed inside an individual non-matching gap segment. Larger gaps are left unmarked rather than classified. |
 | `cluster_threshold` | `0.70` | Edit-similarity cutoff (0-1) at which two pairs' shared formulas count as *the same* formula, judged on the formula rather than the whole charter. `1.0` gives verbatim-only clusters. `0.70` is the default rather than KONI's `0.85`, because on the MOM corpus `0.85` split one papal privilege template into clusters of 24, 12, 6 and 2 charters over differing recipients, and `0.70` merges them with no false merge among clusters of four or more. `0.65` starts over-merging. |
 | `cluster_min` | `2` | Minimum number of pairs a cluster must contain to be reported. |
-| `cluster_linkage` | `'louvain'` | How the edit-similarity graph becomes clusters. `louvain` (default) finds modularity communities — cores denser among themselves than with the rest — keeping one template whole while refusing to chain two formulas that merely share a phrase; it needs `networkx`. `clique` splits each group into **maximal cliques**, so every formula matches every other one, but a chained group is broken apart and a formula between two groups appears in **both** clusters. `union` is KONI's original union-find, which chains. Not a boolean on purpose: `-flag` arguments are presence switches, so a `True`-by-default boolean could not be turned off from the command line. |
+| `cluster_linkage` | `'louvain'` | How the edit-similarity graph becomes clusters. `louvain` (default) finds modularity communities — cores denser among themselves than with the rest — keeping one template whole while refusing to chain two formulas that merely share a phrase; it needs `networkx`. `clique` splits each group into **maximal cliques**, so every formula matches every other one, but a chained group is broken apart and a formula between two groups appears in **both** clusters. `union` is KONI's original union-find, which chains. |
 | `core_gap_tolerance` | `8` | How wide a gap the core aligner may bridge, in tokens, on either side. Strict word-for-word matching breaks a formula in two at the first inserted word (`uestro auctoritate` against `auctoritate` was enough); eight tokens spans the widest slot measured in the corpus without bridging two genuinely different formulas. |
 | `core_min_tokens` | `12` | Shortest aligned window (its shorter side) that still counts as a formula. Below it the pair falls back to the longest contiguous run; the run reports how many took that path. |
-| `core_anchors` | `''` | Where a formula is looked for: the performative verbs that carry a charter's legal act (`donamus`, `contulimus`, `confirmamus`…), as comma-separated **stems** prefix-matched against the folded tokens. Without them the alignment maximises matched tokens, and the longest shared run in a mediaeval charter is the protocol — on the MOM corpus no core came out below 56 tokens (median 208) and 28 of 40 clusters opened on a protocol phrase. A pair whose shared text carries no anchor keeps the unanchored window. **Empty by default, and there is no built-in list** — see [Clustering](#clustering-recurring-legal-formulas) for the measurements behind that. `-core_anchors=donau,contul,tradid` supplies them; `-core_anchors=` (the `=` form — fargv crashes on a bare empty argument) and `-core_anchors none` both select the unanchored extraction. |
+| `core_anchors` | `''` | Where a formula is looked for: the performative verbs that carry a charter's legal act (`donamus`, `contulimus`, `confirmamus`…), as comma-separated **stems** prefix-matched against the folded tokens. Without them the alignment maximises matched tokens, and the longest shared run in a mediaeval charter is the protocol — on the MOM corpus no core came out below 56 tokens (median 208) and 28 of 40 clusters opened on a protocol phrase. A pair whose shared text carries no anchor keeps the unanchored window. **Empty by default, and there is no built-in list** — see [Clustering](#clustering-recurring-legal-formulas) for the measurements behind that. `-core_anchors=donau,contul,tradid` supplies them; `-core_anchors=` and `-core_anchors none` both select the unanchored extraction. |
 | `core_anchor_window` | `15` | How far the window may extend past the anchor, in tokens, on either side. |
 | `core_max_tokens` | `50` | Hard ceiling on the reported window, in tokens; the window is centred on the anchor and clamped inside the aligned span. A dispositio runs 15–40 words while a protocol panel runs to 200, so without a ceiling a long generic overlap outvotes a short specific one. `0` leaves the window uncapped. The near-duplicate test reads the pair's whole shared span, not this window. |
 | `core_identity_threshold` | `0.0` | Minimum identity (`2 × matched / (len_a + len_b)`, the same normalisation as `cluster_threshold`) for an aligned window to be accepted. `0.0` accepts every window the aligner returns; raise it to demand a tighter formula and send the loose pairs back to the contiguous rule. |
@@ -284,9 +280,7 @@ never disagree about what counts as a variant and what as a bridge.
 > `Variation_Type`). Reading by **header name** is unaffected. `clusters.tsv` is a new file, with
 > columns `ClusterID, Size, Anchor, CoreFormula, CoreFolded, Documents, DistinctTexts, CoreTokens,
 > MeanIDF, Specificity, Cohesion, Members, PairCosine, PairCoreRatio, SharedTokens, Coverage, Kind`.
-> Turning the option off restores the older layout, so long as it is turned off in the GUI or by
-> setting the default in `flame.py` — the command line cannot switch a boolean *off*, since `-flag`
-> arguments are presence switches (see [Command-Line Interface](#command-line-interface-cli)).
+> Turning the option off (`-gen_clusters false`) restores the older layout.
 
 ---
 

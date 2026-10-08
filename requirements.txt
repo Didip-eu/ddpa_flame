@@ -1,4 +1,3 @@
-fargv
 numpy
 nltk
 plotly

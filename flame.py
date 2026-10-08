@@ -7,8 +7,8 @@ import pathlib
 import re
 import sys
 import unicodedata
+import argparse
 from datetime import datetime
-import fargv
 import tqdm
 from rapidfuzz import fuzz
 from itertools import chain, combinations
@@ -31,8 +31,7 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import flame_clustering
 
-# The command line as launched. fargv consumes sys.argv while parsing it, so the
-# report's "reproduce with" line has to be copied out before main() runs.
+# The command line as launched, for the report's "reproduce with" line.
 _LAUNCH_ARGV = list(sys.argv)
 
 
@@ -337,9 +336,7 @@ DEFAULT_PARAMS = {
     # variable slots in one piece; 'clique' splits each group into maximal
     # cliques, so every core in a cluster agrees with every other; 'union' keeps
     # KONI's connected components, which also merge A with C when only A~B and
-    # B~C hold. A string rather than a boolean because fargv treats a boolean as
-    # a presence switch: a True-defaulted flag could never be turned back off
-    # from the command line, only from the GUI.
+    # B~C hold.
     'cluster_linkage': 'louvain',
     # How far a formula's variable slot may open before the core is cut in two:
     # the gapped alignment (flame_clustering.align_core) chains matching runs
@@ -361,8 +358,7 @@ DEFAULT_PARAMS = {
     # the aligner where the act is. A pair whose shared text carries none keeps
     # the unanchored window, which the report counts. Empty (or `none`) switches
     # anchoring off and gives back the pre-anchor clustering word for word;
-    # `-core_anchors=` does the same from the CLI (the `=` form: fargv crashes on
-    # a bare empty argument).
+    # `-core_anchors=` does the same from the CLI.
     #
     # There is no built-in list, and that is a measured decision rather than an
     # oversight. A hand-written Latin-and-German list was tried and is gone
@@ -2261,11 +2257,35 @@ document.addEventListener("DOMContentLoaded", function() {
             f.writelines(rows)
         print("Generated linguistic_variations.tsv")
 
+def parse_switch(value: str) -> bool:
+    """Reads a boolean argument value: true, false, yes, no, 1 or 0."""
+    match value.strip().lower():
+        case 'true' | 'yes' | '1':
+            return True
+        case 'false' | 'no' | '0':
+            return False
+    raise argparse.ArgumentTypeError(f"expected true or false, got '{value}'")
+
+
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Reads the command line into the parameters of DEFAULT_PARAMS, one -name option each."""
+    parser = argparse.ArgumentParser(description="Formulaic Language Analysis in Medieval Expressions",
+                                     allow_abbrev=False)
+    for name, default in DEFAULT_PARAMS.items():
+        if isinstance(default, bool):
+            # A switch on its own turns the option on; a value sets it either way.
+            parser.add_argument(f'-{name}', type=parse_switch, nargs='?', const=True, default=default,
+                                metavar='true|false', help=f"default: {default}")
+        else:
+            parser.add_argument(f'-{name}', type=type(default), default=default, help=f"default: {default!r}")
+    return parser.parse_args(argv)
+
+
 def main():
     print("--- Formulaic Language Analysis in Medieval Expressions ---")
     print("For command-line options, run with the -h flag.")
 
-    parsed_args, _ = fargv.fargv(DEFAULT_PARAMS)
+    parsed_args = parse_args()
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

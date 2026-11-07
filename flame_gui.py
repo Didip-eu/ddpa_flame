@@ -222,9 +222,6 @@ class FlameGUI(tk.Tk):
         self.chk_spans = ttk.Checkbutton(reports_frame, text="Generate Character-Offset Spans JSONL", variable=self.params['gen_spans_jsonl'])
         self.chk_spans.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
 
-        # A Combobox rather than a checkbox on purpose: fargv reads a flag's
-        # *presence*, so a True-by-default boolean could never be switched off
-        # from the command line. The pipeline therefore takes an enum.
         ttk.Label(reports_frame, text="Cluster Linkage:").grid(row=4, column=0, sticky=tk.W, padx=20, pady=2)
         self.linkage_dropdown = ttk.Combobox(
             reports_frame, textvariable=self.params['cluster_linkage'],

@@ -67,7 +67,7 @@ Full report (ablation, noise curves, threshold selection, run metadata): [benchm
 
 ## Installation
 
-Requires Python 3.9 or newer and pip 26.1 or newer. A virtual environment is recommended.
+Requires Python 3.10 or newer and pip 26.1 or newer. A virtual environment is recommended.
 
 ```bash
 git clone https://github.com/kreeedit/FLAME && cd FLAME
@@ -90,7 +90,7 @@ Run `python flame_gui.py`. The window has three tabs: **Data & Core Setup** (cor
 
 ### Command-Line Interface (CLI)
 
-Arguments take a **single leading dash** (`-input_path`, not `--input_path`), as `-param value` or `-param=value`. Booleans are **presence switches**: `-auto_tune` turns the option on whatever value follows it, so a `True`-default switch (the `gen_*` reports) cannot be turned off from the command line. Every parameter and its default: `python flame.py -h`, or the table in [docs/CLI.md](docs/CLI.md).
+Arguments take a **single leading dash** (`-input_path`, not `--input_path`), as `-param value` or `-param=value`. A boolean on its own turns the option on (`-auto_tune`); with a value it is set either way (`-gen_heatmap false`; also `true`, `yes`, `no`, `1`, `0`). Every parameter and its default: `python flame.py -h`, or the table in [docs/CLI.md](docs/CLI.md).
 
 ```bash
 python flame.py -input_path ./texts                                   # one corpus, all defaults

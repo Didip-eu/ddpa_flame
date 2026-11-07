@@ -225,6 +225,9 @@ class FlameGUI(tk.Tk):
         self.chk_clusters = ttk.Checkbutton(reports_frame, text="Generate Clustering Report (Formula Clusters)", variable=self.params['gen_clusters'])
         self.chk_clusters.grid(row=3, column=0, sticky=tk.W, padx=20, pady=2)
 
+        self.chk_spans = ttk.Checkbutton(reports_frame, text="Generate Character-Offset Spans JSONL", variable=self.params['gen_spans_jsonl'])
+        self.chk_spans.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+
         ttk.Label(reports_frame, text="Cluster Linkage:").grid(row=4, column=0, sticky=tk.W, padx=20, pady=2)
         self.linkage_dropdown = ttk.Combobox(
             reports_frame, textvariable=self.params['cluster_linkage'],
@@ -278,6 +281,7 @@ class FlameGUI(tk.Tk):
         self.chk_linguistic.config(state=new_state)
         self.chk_heatmap.config(state=new_state)
         self.chk_clusters.config(state=new_state)
+        self.chk_spans.config(state=new_state)
 
     def toggle_phonetic_entries(self):
         """Enables/disables phonetic reduction entries based on checkbox state."""
@@ -491,6 +495,9 @@ class FlameGUI(tk.Tk):
                     SimilarityVisualizer.generate_linguistic_summary_tsv(analyzer, similarity_threshold=final_threshold, clusters=clusters)
                 else:
                     print("Skipping linguistic TSV variants generation as per configuration.")
+
+                if analyzer.args.gen_spans_jsonl:
+                    SimilarityVisualizer.generate_spans_jsonl(analyzer, similarity_threshold=final_threshold, clusters=clusters)
 
                 if analyzer.args.gen_clusters:
                     SimilarityVisualizer.generate_cluster_report(analyzer, clusters)

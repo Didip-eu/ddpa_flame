@@ -36,6 +36,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `flame_bpe.py`: a BPE trainer in pure Python that yields the vocabulary, merges and tokens of
   Hugging Face `tokenizers` with the `Whitespace` pre-tokenizer; FLAME uses it where `tokenizers`
   is not installed, as in Pyodide.
+- `flame_ddp.py` and the GUI tab *4. Fetch from Monasterium*: charters from the Monasterium NG
+  API by document id, atom id or URL, written as `<year>_<id>.txt` with `manifest.tsv` and `fetch.json`.
 
 ### Changed
 
@@ -60,11 +62,17 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - The reports tokenize each text once per run, and the clustering folds each distinct token once;
   the outputs are the same.
 - `flame_bpe.py` encodes the words of its training text from the splits training ended with.
+- The command line is read with argparse: a boolean on its own turns the option on, and with a
+  value (`true`, `false`, `yes`, `no`, `1`, `0`) sets it either way, so a `gen_*` report can be
+  switched off. `fargv` is no longer required.
 
 ### Fixed
 
 - `similarity_summary.tsv` lists the shared blocks of equal length in the same order on every run;
   their order followed Python's per-process string hashing.
+- A file name that opens with a year and an underscore (`1182_...`), or with `undated_`, is dated
+  by that alone; other names are dated by their first number from 1000 to 2999. An undated text
+  is no longer placed left of a dated one.
 
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 

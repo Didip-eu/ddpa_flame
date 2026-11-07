@@ -46,6 +46,23 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `CITATION.cff` and the README *Cite* block now give the concept DOI (10.5281/zenodo.15805448),
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
+- The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
+  `gen_*` report can be switched off. `fargv` is not required.
+- plotly is imported only for the heatmap.
+- The Otsu threshold is computed in `flame_threshold.py`, equal to scikit-image's `threshold_otsu`
+  on 3,000 random score sets. scikit-image and python-Levenshtein are not required.
+- The skip-gram features are hashed as uint64 in one pass over the corpus. Hashes and similarity
+  matrix equal 4acabd2 on 100, 295 and 899 FSDB tenors and on a 100 x 295 run; on 899 tenors the
+  similarity step takes 4.6 s (4acabd2: 13.4 s) and the run peaks at 0.66 GB (4acabd2: 1.1 GB).
+- The reports tokenize each text once per run, and the clustering folds each distinct token once.
+
+### Fixed
+
+- A file name that starts with a year or `undated` and an underscore is dated by that prefix, other
+  names by their first number from 1000 to 2999. A dated text is placed left of an undated one.
+- Shared blocks of equal length in `similarity_summary.tsv` are ordered by their text, so the file
+  is the same on every run.
+- The comparison report escapes the texts and file names it shows.
 
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 

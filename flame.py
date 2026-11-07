@@ -1,6 +1,7 @@
 import numpy as np
 import glob
 import hashlib
+import html
 import json
 import math
 import os
@@ -8,21 +9,21 @@ import pathlib
 import re
 import sys
 import unicodedata
+import argparse
 from datetime import datetime
-import fargv
 import tqdm
 from rapidfuzz import fuzz
 from itertools import chain, combinations
 from difflib import SequenceMatcher
 from collections import defaultdict, Counter
+from functools import lru_cache
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional
 import tempfile
 from scipy.sparse import coo_matrix, save_npz, vstack
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfTransformer
-import plotly.graph_objects as go
-from skimage.filters import threshold_otsu
+from flame_threshold import threshold_otsu
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
@@ -32,8 +33,7 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import flame_clustering
 
-# The command line as launched. fargv consumes sys.argv while parsing it, so the
-# report's "reproduce with" line has to be copied out before main() runs.
+# The command line as launched, for the report's "reproduce with" line.
 _LAUNCH_ARGV = list(sys.argv)
 
 
@@ -338,9 +338,7 @@ DEFAULT_PARAMS = {
     # variable slots in one piece; 'clique' splits each group into maximal
     # cliques, so every core in a cluster agrees with every other; 'union' keeps
     # KONI's connected components, which also merge A with C when only A~B and
-    # B~C hold. A string rather than a boolean because fargv treats a boolean as
-    # a presence switch: a True-defaulted flag could never be turned back off
-    # from the command line, only from the GUI.
+    # B~C hold.
     'cluster_linkage': 'louvain',
     # How far a formula's variable slot may open before the core is cut in two:
     # the gapped alignment (flame_clustering.align_core) chains matching runs
@@ -362,8 +360,7 @@ DEFAULT_PARAMS = {
     # the aligner where the act is. A pair whose shared text carries none keeps
     # the unanchored window, which the report counts. Empty (or `none`) switches
     # anchoring off and gives back the pre-anchor clustering word for word;
-    # `-core_anchors=` does the same from the CLI (the `=` form: fargv crashes on
-    # a bare empty argument).
+    # `-core_anchors=` does the same from the CLI.
     #
     # There is no built-in list, and that is a measured decision rather than an
     # oversight. A hand-written Latin-and-German list was tried and is gone
@@ -497,6 +494,38 @@ def parse_bigram_rules(rules_str: str) -> Dict[str, str]:
             continue
         mapping[src] = dst
     return mapping
+
+
+MERSENNE_61 = np.uint64(2**61 - 1)
+
+
+def _reduce_61(values: np.ndarray) -> np.ndarray:
+    """values mod 2**61 - 1, for uint64 values below 2**64."""
+    values = (values & MERSENNE_61) + (values >> np.uint64(61))
+    return np.where(values >= MERSENNE_61, values - MERSENNE_61, values)
+
+
+def _add_mod_61(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """(a + b) mod 2**61 - 1 for a, b below the modulus."""
+    return _reduce_61(a + b)
+
+
+def _mul_mod_61(tokens: np.ndarray, power: int) -> np.ndarray:
+    """(tokens * power) mod 2**61 - 1 in uint64, for tokens below 2**31 and power below the modulus."""
+    high, low = np.uint64(power >> 31), np.uint64(power & (2**31 - 1))
+    # power * t = high * t * 2**31 + low * t, and 2**61 = 1 modulo 2**61 - 1.
+    product_high = high * tokens  # below 2**61
+    shifted = (product_high >> np.uint64(30)) + ((product_high & np.uint64(2**30 - 1)) << np.uint64(31))
+    return _add_mod_61(_reduce_61(shifted), _reduce_61(low * tokens))
+
+
+def _ranges(lengths: np.ndarray) -> np.ndarray:
+    """0, 1, ..., length - 1 for each length, concatenated."""
+    total = int(lengths.sum())
+    if total == 0:
+        return np.zeros(0, dtype=np.intp)
+    starts = np.cumsum(lengths) - lengths
+    return np.arange(total, dtype=np.intp) - np.repeat(starts, lengths)
 
 
 class Flame:
@@ -935,6 +964,13 @@ class Flame:
         unique_tokens = sorted(list(all_tokens))
         return {token: i for i, token in enumerate(unique_tokens)}
 
+    def display_tokens(self, corpus: List[str]) -> List[List[str]]:
+        """The word_tokenize tokens of each text of one of this run's corpora, tokenized once per run."""
+        cache = self.__dict__.setdefault('_display_tokens', {})
+        if id(corpus) not in cache:
+            cache[id(corpus)] = [word_tokenize(text) for text in corpus]
+        return cache[id(corpus)]
+
     def tokens_to_int(self, tokens: List[str]) -> List[int]:
         return [self.encoder[token] for token in tokens if token in self.encoder]
 
@@ -944,13 +980,9 @@ class Flame:
             return 0.01
         scores = self.dist_mat.data
         if method == 'otsu':
-            try:
-                auto_threshold = threshold_otsu(scores)
-                print(f"Automatically determined threshold (Otsu's method): {auto_threshold:.4f}")
-                return float(auto_threshold)
-            except ImportError:
-                print("Warning: scikit-image is not installed. Falling back to percentile method.")
-                return self._determine_auto_threshold(method='percentile', percentile=percentile)
+            auto_threshold = threshold_otsu(scores)
+            print(f"Automatically determined threshold (Otsu's method): {auto_threshold:.4f}")
+            return float(auto_threshold)
         elif method == 'percentile':
             if scores.size == 0: return 0.01
             auto_threshold = np.percentile(scores, percentile)
@@ -960,35 +992,43 @@ class Flame:
             raise ValueError(f"Unknown auto-threshold method: {method}")
 
     def leave_n_out_grams(self, tokens: List[str]) -> np.ndarray:
-        """Vectorized rolling hash fingerprinting matching the leave-n-out specification."""
-        MOD = 2**61 - 1
-        int_tokens = np.array(self.tokens_to_int(tokens), dtype=np.int64)
-        seq_len = len(int_tokens)
-        elements_to_keep = self.args.ngram - self.args.n_out
+        """The hashes of the leave-n-out sub-grams of a text, as uint64 (see corpus_features)."""
+        return self.corpus_features([tokens])[0]
 
-        if elements_to_keep < 1 or seq_len < self.args.ngram:
-            return np.array([], dtype=np.int64)
+    def corpus_features(self, token_lists: List[List[str]]) -> Tuple[np.ndarray, np.ndarray]:
+        """The leave-n-out sub-gram hashes of many texts in one pass, and how many belong to each.
 
+        A sub-gram keeps ngram - n_out positions of a window of ngram tokens; its hash is
+        sum(vocab_size**k * token_k) mod 2**61 - 1. A text's hashes run combination by combination,
+        each over the text's windows in order."""
+        ngram, keep = self.args.ngram, self.args.ngram - self.args.n_out
         vocab_size = len(self.encoder)
-        if vocab_size == 0:
-            return np.array([], dtype=np.int64)
+        int_lists = [self.tokens_to_int(tokens) for tokens in token_lists]
+        windows_per_text = np.array([max(len(ints) - ngram + 1, 0) for ints in int_lists], dtype=np.intp)
+        if keep < 1 or vocab_size == 0 or windows_per_text.sum() == 0:
+            return np.array([], dtype=np.uint64), np.zeros(len(token_lists), dtype=np.intp)
 
-        num_ngrams = seq_len - self.args.ngram + 1
-        ngram_matrix = np.array([
-            int_tokens[i : i + num_ngrams] for i in range(self.args.ngram)
-        ], dtype=np.int64)
+        tokens = np.array([token for ints in int_lists for token in ints], dtype=np.uint64)
+        text_starts = np.cumsum([0] + [len(ints) for ints in int_lists[:-1]]).astype(np.intp)
+        # The windows of all texts, each starting inside its own text.
+        window_starts = np.repeat(text_starts, windows_per_text) + _ranges(windows_per_text)
+        combos = list(combinations(range(ngram), keep))
+        powers = [pow(vocab_size, k, int(MERSENNE_61)) for k in range(keep)]
+        hashes = np.empty((len(combos), window_starts.size), dtype=np.uint64)
+        for row, combo_indices in enumerate(combos):
+            hashed = np.zeros(window_starts.size, dtype=np.uint64)
+            for power, position in zip(powers, combo_indices):
+                hashed = _add_mod_61(hashed, _mul_mod_61(tokens[window_starts + position], power))
+            hashes[row] = hashed
 
-        indices_to_keep_combinations = list(combinations(range(self.args.ngram), elements_to_keep))
-        all_feature_hashes = []
-
-        for combo_indices in indices_to_keep_combinations:
-            sub_gram_matrix = ngram_matrix[list(combo_indices), :]
-            num_sub_gram_tokens = len(combo_indices)
-            powers = np.power(vocab_size, np.arange(num_sub_gram_tokens), dtype=object) % MOD
-            hashed_values = np.mod(np.dot(powers, sub_gram_matrix), MOD)
-            all_feature_hashes.append(hashed_values)
-
-        return np.concatenate(all_feature_hashes) if all_feature_hashes else np.array([], dtype=np.int64)
+        # From combination-major over the corpus to text-major, combination by combination.
+        features_per_text = windows_per_text * len(combos)
+        window_offsets = np.cumsum(windows_per_text) - windows_per_text
+        position_in_text = _ranges(features_per_text)
+        repeated_windows = np.repeat(windows_per_text, features_per_text)
+        combo_of = position_in_text // np.maximum(repeated_windows, 1)
+        window_of = np.repeat(window_offsets, features_per_text) + position_in_text % np.maximum(repeated_windows, 1)
+        return hashes[combo_of, window_of], features_per_text
 
     def compute_similarity_matrix(self):
         if not self.tokenized_corpus:
@@ -996,51 +1036,37 @@ class Flame:
             return
 
         print("Generating features for all documents...")
-        doc_features1 = [self.leave_n_out_grams(tokens) for tokens in tqdm.tqdm(self.tokenized_corpus, desc="Generating features for Corpus 1")]
-        all_doc_features_lists = [doc_features1]
-        doc_features2 = None
+        texts1 = len(self.tokenized_corpus)
+        token_lists = self.tokenized_corpus + (self.tokenized_corpus2 if self.is_inter_comparison else [])
+        all_features, features_per_text = self.corpus_features(token_lists)
 
-        if self.is_inter_comparison:
-            doc_features2 = [self.leave_n_out_grams(tokens) for tokens in tqdm.tqdm(self.tokenized_corpus2, desc="Generating features for Corpus 2")]
-            all_doc_features_lists.append(doc_features2)
-
-        print("Building global feature vocabulary iteratively...")
-        feature_to_col_idx = {}
-        next_col_idx = 0
-        for doc_list in all_doc_features_lists:
-            for features in tqdm.tqdm(doc_list, desc="Building vocabulary"):
-                if features.size > 0:
-                    for feature in features:
-                        if feature not in feature_to_col_idx:
-                            feature_to_col_idx[feature] = next_col_idx
-                            next_col_idx += 1
-
-        if not feature_to_col_idx:
+        print("Building global feature vocabulary...")
+        if all_features.size == 0:
             print("No features could be generated from the corpus.")
             shape = (len(self.corpus), len(self.corpus2 if self.is_inter_comparison else self.corpus))
             self.dist_mat = coo_matrix(shape, dtype=np.float32)
             return
+        unique_features, first_index, inverse = np.unique(all_features, return_index=True, return_inverse=True)
+        # Columns are numbered by first appearance, corpus 1 before corpus 2.
+        column_of_unique = np.empty(unique_features.size, dtype=np.intp)
+        column_of_unique[np.argsort(first_index, kind='stable')] = np.arange(unique_features.size, dtype=np.intp)
+        columns = column_of_unique[inverse]
+        rows = np.repeat(np.arange(len(token_lists), dtype=np.intp), features_per_text)
+        feature_count = unique_features.size
+        del all_features, unique_features, first_index, inverse, column_of_unique
+        print(f"Vocabulary built. Found {feature_count} unique features.")
 
-        print(f"Vocabulary built. Found {len(feature_to_col_idx)} unique features.")
-
-        def create_sparse_matrix(doc_features_list, num_docs, feature_map):
-            rows, cols, data = [], [], []
-            for doc_id, features in enumerate(doc_features_list):
-                if features.size > 0:
-                    unique_doc_features, counts = np.unique(features, return_counts=True)
-                    for feature, count in zip(unique_doc_features, counts):
-                        if feature in feature_map:
-                            rows.append(doc_id)
-                            cols.append(feature_map[feature])
-                            data.append(count)
-            if not rows:
-                return coo_matrix((num_docs, len(feature_map)), dtype=np.float32).tocsr()
-            return coo_matrix((data, (rows, cols)), shape=(num_docs, len(feature_map)), dtype=np.float32).tocsr()
+        def create_sparse_matrix(first_text: int, num_docs: int):
+            """Documents by features: how often each feature occurs in each document."""
+            chosen = (rows >= first_text) & (rows < first_text + num_docs)
+            ones = np.ones(int(chosen.sum()), dtype=np.float32)
+            # tocsr() sums the repeated (document, feature) entries.
+            return coo_matrix((ones, (rows[chosen] - first_text, columns[chosen])), shape=(num_docs, feature_count), dtype=np.float32).tocsr()
 
         print("Creating sparse document-feature matrices...")
         if self.is_inter_comparison:
-            matrix1 = create_sparse_matrix(doc_features1, len(self.corpus), feature_to_col_idx)
-            matrix2 = create_sparse_matrix(doc_features2, len(self.corpus2), feature_to_col_idx)
+            matrix1 = create_sparse_matrix(0, len(self.corpus))
+            matrix2 = create_sparse_matrix(texts1, len(self.corpus2))
 
             print("Applying TF-IDF transformation...")
             combined_matrix = vstack([matrix1, matrix2])
@@ -1052,7 +1078,7 @@ class Flame:
             print("Calculating inter-corpus Cosine similarity (sparse TF-IDF output)...")
             self.dist_mat = cosine_similarity(matrix1_tfidf, matrix2_tfidf, dense_output=False)
         else:
-            matrix = create_sparse_matrix(doc_features1, len(self.corpus), feature_to_col_idx)
+            matrix = create_sparse_matrix(0, len(self.corpus))
 
             print("Applying TF-IDF transformation...")
             tfidf = TfidfTransformer()
@@ -1120,8 +1146,20 @@ def fold_medieval_orthography(text: str) -> str:
     return re.sub(r'(.)\1+', r'\1', text)                  # ss -> s, nn -> n
 
 
+@lru_cache(maxsize=1 << 16)
 def fold_for_compare(text: str) -> str:
+    """A token or a run of tokens as compared: normalized, then folded."""
     return fold_medieval_orthography(normalize_for_compare(text))
+
+
+def _text_html(text: str) -> str:
+    """Text for an HTML text node: &, < and > escaped."""
+    return html.escape(text, quote=False)
+
+
+def _match_html(text: str) -> str:
+    """A matched passage for the comparison report: escaped, each punctuation mark in its span."""
+    return re.sub(r'[^\w\s]', lambda mark: f'<span class="punct-in-match">{_text_html(mark.group())}</span>', text)
 
 
 def classify_gap(gap1_tokens: List[str], gap2_tokens: List[str], fuzzy_threshold: float) -> Tuple[str, float]:
@@ -1423,6 +1461,12 @@ class SimilarityVisualizer:
 
     @staticmethod
     def _extract_year_from_filename(filename: str) -> int:
+        """The year a file name states; 9999 when it states none."""
+        # A leading year or "undated" decides alone, so the digits of an
+        # identifier after it are never read as a year.
+        leading = re.match(r'(\d{4}|undated)_', filename)
+        if leading:
+            return 9999 if leading.group(1) == 'undated' else int(leading.group(1))
         match = re.search(r'(?<!\d)(1\d{3}|2\d{3})(?!\d)', filename)
         if match:
             return int(match.group(1))
@@ -1437,8 +1481,8 @@ class SimilarityVisualizer:
         """
         words1 = [token for token in gap1_tokens if token.isalnum()]
         words2 = [token for token in gap2_tokens if token.isalnum()]
-        str1 = SimilarityVisualizer.detokenizer.detokenize(gap1_tokens)
-        str2 = SimilarityVisualizer.detokenizer.detokenize(gap2_tokens)
+        str1 = _text_html(SimilarityVisualizer.detokenizer.detokenize(gap1_tokens))
+        str2 = _text_html(SimilarityVisualizer.detokenizer.detokenize(gap2_tokens))
 
         if not str1 and not str2:
             return "", ""
@@ -1468,8 +1512,8 @@ class SimilarityVisualizer:
         map_analysis_to_original2 = [i for i, token in enumerate(text2_original_tokens) if token.isalnum()]
 
         if not analysis_tokens1 or not analysis_tokens2:
-            return SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens), \
-                   SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens)
+            return _text_html(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens)), \
+                   _text_html(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens))
 
         matcher = SequenceMatcher(None, analysis_tokens1, analysis_tokens2, autojunk=False)
         raw_matching_blocks = matcher.get_matching_blocks()
@@ -1490,12 +1534,12 @@ class SimilarityVisualizer:
                 if gap2_html: highlighted_html_text2.append(gap2_html)
 
             m_txt1_raw = SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[a_start_orig:a_end_orig])
-            m_txt1_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt1_raw)
+            m_txt1_processed = _match_html(m_txt1_raw)
             m_txt1_html = f'<span class="highlight clickable" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt1_processed}</span>'
             highlighted_html_text1.append(m_txt1_html)
 
             m_txt2_raw = SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[b_start_orig:b_end_orig])
-            m_txt2_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt2_raw)
+            m_txt2_processed = _match_html(m_txt2_raw)
             m_txt2_html = f'<span class="match-text" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt2_processed}</span>'
             highlighted_html_text2.append(m_txt2_html)
 
@@ -1513,9 +1557,9 @@ class SimilarityVisualizer:
             if tail2_html: highlighted_html_text2.append(tail2_html)
         else:
             if pos1 < len(text1_original_tokens):
-                highlighted_html_text1.append(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[pos1:]))
+                highlighted_html_text1.append(_text_html(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[pos1:])))
             if pos2 < len(text2_original_tokens):
-                highlighted_html_text2.append(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[pos2:]))
+                highlighted_html_text2.append(_text_html(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[pos2:])))
 
         return " ".join(filter(None, highlighted_html_text1)), " ".join(filter(None, highlighted_html_text2))
 
@@ -1793,8 +1837,8 @@ document.addEventListener("DOMContentLoaded", function() {
                     continue
                 similar_pairs.append((i, j, score))
         similar_pairs.sort(key=lambda x: x[2], reverse=True)
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
 
         for pair in tqdm.tqdm(similar_pairs, desc="Generating HTML pairs"):
             i, j, score = pair
@@ -1823,8 +1867,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 max_gap_words=analyzer.args.max_gap_words,
                 fuzz_threshold=analyzer.args.fuzz_threshold
             )
-            f1 = display_path(path1, root1)
-            f2 = display_path(path2, root2)
+            f1 = _text_html(display_path(path1, root1))
+            f2 = _text_html(display_path(path2, root2))
             segment = f'<div class="comparison-block" data-score="{score:.4f}" data-pair-id="{unique_pair_id}">' \
                       f'<h3>Comparison: {f1} &harr; {f2}</h3>' \
                       f'<div class="similarity-score">Cosine Similarity: {score:.4f}</div>' \
@@ -1860,6 +1904,7 @@ document.addEventListener("DOMContentLoaded", function() {
         else:
             y_labels = x_labels = [display_path(p, analyzer.corpus_root) for p in analyzer.file_paths]
             title = 'Text Similarity Heatmap (Intra-Corpus)'
+        import plotly.graph_objects as go  # only the heatmap needs plotly
         fig = go.Figure(data=go.Heatmap(z=dense_dist_mat, x=x_labels, y=y_labels, colorscale='Blues', zmin=0.0, zmax=1.0, colorbar=dict(title='Cosine Similarity')))
         fig.update_layout(title_text=title, height=max(600, len(y_labels)*20), width=max(700, len(x_labels)*20))
         fig.write_html("similarity_heatmap.html")
@@ -1892,8 +1937,8 @@ document.addEventListener("DOMContentLoaded", function() {
         cluster_min = int(cluster_min)
         if analyzer.dist_mat is None or not analyzer.corpus:
             return None
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
         if analyzer.is_inter_comparison:
             doc_names1 = [display_path(p, analyzer.corpus_root) for p in analyzer.file_paths]
             doc_names2 = [display_path(p, analyzer.corpus_root2) for p in analyzer.file_paths2]
@@ -2299,9 +2344,9 @@ document.addEventListener("DOMContentLoaded", function() {
         else:
             header = "DocumentFilename\tSimilarityFrequency\tRelatedDocuments\tLongSimilarities(>4words)\n"
         rows = [header]
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
         if analyzer.is_inter_comparison:
-            display_token_corpus2 = [word_tokenize(text) for text in analyzer.corpus2]
+            display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2)
         else:
             display_token_corpus2 = display_token_corpus1
         for i in tqdm.tqdm(range(len(analyzer.corpus)), desc="Generating TSV summary"):
@@ -2320,7 +2365,7 @@ document.addEventListener("DOMContentLoaded", function() {
             else:
                 related_doc_names = sorted([display_path(analyzer.file_paths[j], analyzer.corpus_root)
                                             for j in related_docs_indices])
-            long_segments_str = ' | '.join(f'"{s}"' for s in sorted(long_segments, key=len, reverse=True)) or 'None'
+            long_segments_str = ' | '.join(f'"{s}"' for s in sorted(long_segments, key=lambda s: (-len(s), s))) or 'None'
             related_docs_str = ', '.join(related_doc_names) or 'None'
             cluster_cell = f"{clusters['cluster_ids1'][i]}\t" if clusters else ""
             rows.append(f"{display_path(analyzer.file_paths[i], analyzer.corpus_root)}\t{cluster_cell}{len(related_doc_names)}\t{related_docs_str}\t{long_segments_str}\n")
@@ -2340,8 +2385,8 @@ document.addEventListener("DOMContentLoaded", function() {
             rows = ["File_1\tFile_2\tClusterID\tVariation_Type\tToken_1\tToken_2\n"]
         else:
             rows = ["File_1\tFile_2\tVariation_Type\tToken_1\tToken_2\n"]
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
         dist_mat_coo = analyzer.dist_mat.tocoo()
         for i, j, score in tqdm.tqdm(zip(dist_mat_coo.row, dist_mat_coo.col, dist_mat_coo.data), desc="Analyzing linguistic variations", total=dist_mat_coo.nnz):
             if score < similarity_threshold: continue
@@ -2436,7 +2481,7 @@ document.addEventListener("DOMContentLoaded", function() {
             if key not in documents:
                 texts, paths = sides[side]
                 text = texts[index]
-                tokens = word_tokenize(text)
+                tokens = analyzer.display_tokens(texts)[index]
                 spans = _token_char_spans(tokens, text)
                 offsets = None
                 try:
@@ -2499,11 +2544,35 @@ document.addEventListener("DOMContentLoaded", function() {
                   "a text's tokens could not be located in it.")
         print("Generated similarity_spans.jsonl")
 
+def parse_switch(value: str) -> bool:
+    """Reads a boolean argument value: true, false, yes, no, 1 or 0."""
+    match value.strip().lower():
+        case 'true' | 'yes' | '1':
+            return True
+        case 'false' | 'no' | '0':
+            return False
+    raise argparse.ArgumentTypeError(f"expected true or false, got '{value}'")
+
+
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Reads the command line into the parameters of DEFAULT_PARAMS, one -name option each."""
+    parser = argparse.ArgumentParser(description="Formulaic Language Analysis in Medieval Expressions",
+                                     allow_abbrev=False)
+    for name, default in DEFAULT_PARAMS.items():
+        if isinstance(default, bool):
+            # A switch on its own turns the option on; a value sets it either way.
+            parser.add_argument(f'-{name}', type=parse_switch, nargs='?', const=True, default=default,
+                                metavar='true|false', help=f"default: {default}")
+        else:
+            parser.add_argument(f'-{name}', type=type(default), default=default, help=f"default: {default!r}")
+    return parser.parse_args(argv)
+
+
 def main():
     print("--- Formulaic Language Analysis in Medieval Expressions ---")
     print("For command-line options, run with the -h flag.")
 
-    parsed_args, _ = fargv.fargv(DEFAULT_PARAMS)
+    parsed_args = parse_args()
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

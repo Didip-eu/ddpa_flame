@@ -171,6 +171,4 @@ comparisons *before* they inflate the pair counts.
 > `Variation_Type`). Reading by **header name** is unaffected. `clusters.tsv` is a new file, with
 > columns `ClusterID, Size, Anchor, CoreFormula, CoreFolded, Documents, DistinctTexts, CoreTokens,
 > MeanIDF, Specificity, Cohesion, Members, PairCosine, PairCoreRatio, SharedTokens, Coverage, Kind`.
-> Turning the option off restores the older layout, so long as it is turned off in the GUI or by
-> setting the default in `flame.py` — the command line cannot switch a boolean *off*, since `-flag`
-> arguments are presence switches (see [Command-Line Interface](CLI.md#command-line-interface-cli)).
+> Turning the option off (`-gen_clusters false`) restores the older layout.

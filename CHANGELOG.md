@@ -46,6 +46,7 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `CITATION.cff` and the README *Cite* block now give the concept DOI (10.5281/zenodo.15805448),
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
+- plotly is imported only when the heatmap is drawn, so a run with `-gen_heatmap false` needs no plotly.
 
 ### Fixed
 

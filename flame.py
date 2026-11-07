@@ -21,7 +21,6 @@ import tempfile
 from scipy.sparse import coo_matrix, save_npz, vstack
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfTransformer
-import plotly.graph_objects as go
 from skimage.filters import threshold_otsu
 import nltk
 from nltk.tokenize import word_tokenize
@@ -1862,6 +1861,7 @@ document.addEventListener("DOMContentLoaded", function() {
         else:
             y_labels = x_labels = [display_path(p, analyzer.corpus_root) for p in analyzer.file_paths]
             title = 'Text Similarity Heatmap (Intra-Corpus)'
+        import plotly.graph_objects as go  # only the heatmap needs plotly
         fig = go.Figure(data=go.Heatmap(z=dense_dist_mat, x=x_labels, y=y_labels, colorscale='Blues', zmin=0.0, zmax=1.0, colorbar=dict(title='Cosine Similarity')))
         fig.update_layout(title_text=title, height=max(600, len(y_labels)*20), width=max(700, len(x_labels)*20))
         fig.write_html("similarity_heatmap.html")

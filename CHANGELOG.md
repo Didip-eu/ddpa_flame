@@ -33,6 +33,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   tools. Existing outputs are unchanged.
 - `flame_fuzz.py`: the Levenshtein distance and Indel ratio of rapidfuzz in pure Python, with
   the same values; FLAME uses it where rapidfuzz is not installed, as in Pyodide.
+- `flame_bpe.py`: a BPE trainer in pure Python that yields the vocabulary, merges and tokens of
+  Hugging Face `tokenizers` with the `Whitespace` pre-tokenizer; FLAME uses it where `tokenizers`
+  is not installed, as in Pyodide.
 
 ### Changed
 

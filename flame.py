@@ -28,10 +28,14 @@ from flame_threshold import threshold_otsu
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.trainers import BpeTrainer
-from tokenizers.pre_tokenizers import Whitespace
+try:
+    from tokenizers import Tokenizer
+    from tokenizers.models import BPE
+    from tokenizers.trainers import BpeTrainer
+    from tokenizers.pre_tokenizers import Whitespace
+except ImportError:  # Pyodide has no tokenizers; flame_bpe trains the same vocabulary
+    Tokenizer = None
+import flame_bpe
 import flame_clustering
 
 # The command line as launched, for the report's "reproduce with" line.
@@ -790,19 +794,19 @@ class Flame:
             print(f"Adjusting vocab size to the maximum possible value: {max_possible_size}")
             vocab_size = max_possible_size
 
-        tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-        tokenizer.pre_tokenizer = Whitespace()
-        trainer = BpeTrainer(
-            vocab_size=vocab_size,
-            special_tokens=["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
-        )
-
-        model_path = os.path.join(self.tmp_dir, 'bpe_tokenizer.json')
+        special_tokens = ["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
         print(f"INFO: Training BPE tokenizer with final vocab_size: {vocab_size}")
-
-        tokenizer.train([corpus_file], trainer=trainer)
-        tokenizer.save(model_path)
-        self.tokenizer_model = Tokenizer.from_file(model_path)
+        if Tokenizer is None:
+            self.tokenizer_model = flame_bpe.BpeTokenizer(unk_token="[UNK]").train(
+                normalized_corpus_full, vocab_size, special_tokens)
+        else:
+            tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+            tokenizer.pre_tokenizer = Whitespace()
+            trainer = BpeTrainer(vocab_size=vocab_size, special_tokens=special_tokens)
+            model_path = os.path.join(self.tmp_dir, 'bpe_tokenizer.json')
+            tokenizer.train([corpus_file], trainer=trainer)
+            tokenizer.save(model_path)
+            self.tokenizer_model = Tokenizer.from_file(model_path)
 
         print("--- Subword Tokenizer Trained and Loaded ---\n")
 
@@ -925,6 +929,8 @@ class Flame:
     def tokenize(self, text_str: str) -> List[str]:
         if not self.tokenizer_model:
             raise RuntimeError("Tokenizer model is not loaded. Run load_corpus first.")
+        if isinstance(self.tokenizer_model, flame_bpe.BpeTokenizer):
+            return self.tokenizer_model.encode(text_str)
         return self.tokenizer_model.encode(text_str).tokens
 
     def get_encoder(self, all_tokenized_docs: List[List[str]]) -> Dict[str, int]:

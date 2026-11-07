@@ -501,6 +501,38 @@ def parse_bigram_rules(rules_str: str) -> Dict[str, str]:
     return mapping
 
 
+MERSENNE_61 = np.uint64(2**61 - 1)
+
+
+def _reduce_61(values: np.ndarray) -> np.ndarray:
+    """values mod 2**61 - 1, for uint64 values below 2**64."""
+    values = (values & MERSENNE_61) + (values >> np.uint64(61))
+    return np.where(values >= MERSENNE_61, values - MERSENNE_61, values)
+
+
+def _add_mod_61(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """(a + b) mod 2**61 - 1 for a, b below the modulus."""
+    return _reduce_61(a + b)
+
+
+def _mul_mod_61(tokens: np.ndarray, power: int) -> np.ndarray:
+    """(tokens * power) mod 2**61 - 1 in uint64, for tokens below 2**31 and power below the modulus."""
+    high, low = np.uint64(power >> 31), np.uint64(power & (2**31 - 1))
+    # power * t = high * t * 2**31 + low * t, and 2**61 = 1 modulo 2**61 - 1.
+    product_high = high * tokens  # below 2**61
+    shifted = (product_high >> np.uint64(30)) + ((product_high & np.uint64(2**30 - 1)) << np.uint64(31))
+    return _add_mod_61(_reduce_61(shifted), _reduce_61(low * tokens))
+
+
+def _ranges(lengths: np.ndarray) -> np.ndarray:
+    """0, 1, ..., length - 1 for each length, concatenated."""
+    total = int(lengths.sum())
+    if total == 0:
+        return np.zeros(0, dtype=np.intp)
+    starts = np.cumsum(lengths) - lengths
+    return np.arange(total, dtype=np.intp) - np.repeat(starts, lengths)
+
+
 class Flame:
     """Main pipeline execution for medieval formulaic language alignment."""
     def __init__(self, args, tmp_dir: str = '.'):
@@ -960,35 +992,43 @@ class Flame:
             raise ValueError(f"Unknown auto-threshold method: {method}")
 
     def leave_n_out_grams(self, tokens: List[str]) -> np.ndarray:
-        """Vectorized rolling hash fingerprinting matching the leave-n-out specification."""
-        MOD = 2**61 - 1
-        int_tokens = np.array(self.tokens_to_int(tokens), dtype=np.int64)
-        seq_len = len(int_tokens)
-        elements_to_keep = self.args.ngram - self.args.n_out
+        """The hashes of the leave-n-out sub-grams of a text, as uint64 (see corpus_features)."""
+        return self.corpus_features([tokens])[0]
 
-        if elements_to_keep < 1 or seq_len < self.args.ngram:
-            return np.array([], dtype=np.int64)
+    def corpus_features(self, token_lists: List[List[str]]) -> Tuple[np.ndarray, np.ndarray]:
+        """The leave-n-out sub-gram hashes of many texts in one pass, and how many belong to each.
 
+        A sub-gram keeps ngram - n_out positions of a window of ngram tokens; its hash is
+        sum(vocab_size**k * token_k) mod 2**61 - 1. A text's hashes run combination by combination,
+        each over the text's windows in order."""
+        ngram, keep = self.args.ngram, self.args.ngram - self.args.n_out
         vocab_size = len(self.encoder)
-        if vocab_size == 0:
-            return np.array([], dtype=np.int64)
+        int_lists = [self.tokens_to_int(tokens) for tokens in token_lists]
+        windows_per_text = np.array([max(len(ints) - ngram + 1, 0) for ints in int_lists], dtype=np.intp)
+        if keep < 1 or vocab_size == 0 or windows_per_text.sum() == 0:
+            return np.array([], dtype=np.uint64), np.zeros(len(token_lists), dtype=np.intp)
 
-        num_ngrams = seq_len - self.args.ngram + 1
-        ngram_matrix = np.array([
-            int_tokens[i : i + num_ngrams] for i in range(self.args.ngram)
-        ], dtype=np.int64)
+        tokens = np.array([token for ints in int_lists for token in ints], dtype=np.uint64)
+        text_starts = np.cumsum([0] + [len(ints) for ints in int_lists[:-1]]).astype(np.intp)
+        # The windows of all texts, each starting inside its own text.
+        window_starts = np.repeat(text_starts, windows_per_text) + _ranges(windows_per_text)
+        combos = list(combinations(range(ngram), keep))
+        powers = [pow(vocab_size, k, int(MERSENNE_61)) for k in range(keep)]
+        hashes = np.empty((len(combos), window_starts.size), dtype=np.uint64)
+        for row, combo_indices in enumerate(combos):
+            hashed = np.zeros(window_starts.size, dtype=np.uint64)
+            for power, position in zip(powers, combo_indices):
+                hashed = _add_mod_61(hashed, _mul_mod_61(tokens[window_starts + position], power))
+            hashes[row] = hashed
 
-        indices_to_keep_combinations = list(combinations(range(self.args.ngram), elements_to_keep))
-        all_feature_hashes = []
-
-        for combo_indices in indices_to_keep_combinations:
-            sub_gram_matrix = ngram_matrix[list(combo_indices), :]
-            num_sub_gram_tokens = len(combo_indices)
-            powers = np.power(vocab_size, np.arange(num_sub_gram_tokens), dtype=object) % MOD
-            hashed_values = np.mod(np.dot(powers, sub_gram_matrix), MOD)
-            all_feature_hashes.append(hashed_values)
-
-        return np.concatenate(all_feature_hashes) if all_feature_hashes else np.array([], dtype=np.int64)
+        # From combination-major over the corpus to text-major, combination by combination.
+        features_per_text = windows_per_text * len(combos)
+        window_offsets = np.cumsum(windows_per_text) - windows_per_text
+        position_in_text = _ranges(features_per_text)
+        repeated_windows = np.repeat(windows_per_text, features_per_text)
+        combo_of = position_in_text // np.maximum(repeated_windows, 1)
+        window_of = np.repeat(window_offsets, features_per_text) + position_in_text % np.maximum(repeated_windows, 1)
+        return hashes[combo_of, window_of], features_per_text
 
     def compute_similarity_matrix(self):
         if not self.tokenized_corpus:
@@ -996,51 +1036,37 @@ class Flame:
             return
 
         print("Generating features for all documents...")
-        doc_features1 = [self.leave_n_out_grams(tokens) for tokens in tqdm.tqdm(self.tokenized_corpus, desc="Generating features for Corpus 1")]
-        all_doc_features_lists = [doc_features1]
-        doc_features2 = None
+        texts1 = len(self.tokenized_corpus)
+        token_lists = self.tokenized_corpus + (self.tokenized_corpus2 if self.is_inter_comparison else [])
+        all_features, features_per_text = self.corpus_features(token_lists)
 
-        if self.is_inter_comparison:
-            doc_features2 = [self.leave_n_out_grams(tokens) for tokens in tqdm.tqdm(self.tokenized_corpus2, desc="Generating features for Corpus 2")]
-            all_doc_features_lists.append(doc_features2)
-
-        print("Building global feature vocabulary iteratively...")
-        feature_to_col_idx = {}
-        next_col_idx = 0
-        for doc_list in all_doc_features_lists:
-            for features in tqdm.tqdm(doc_list, desc="Building vocabulary"):
-                if features.size > 0:
-                    for feature in features:
-                        if feature not in feature_to_col_idx:
-                            feature_to_col_idx[feature] = next_col_idx
-                            next_col_idx += 1
-
-        if not feature_to_col_idx:
+        print("Building global feature vocabulary...")
+        if all_features.size == 0:
             print("No features could be generated from the corpus.")
             shape = (len(self.corpus), len(self.corpus2 if self.is_inter_comparison else self.corpus))
             self.dist_mat = coo_matrix(shape, dtype=np.float32)
             return
+        unique_features, first_index, inverse = np.unique(all_features, return_index=True, return_inverse=True)
+        # Columns are numbered by first appearance, corpus 1 before corpus 2.
+        column_of_unique = np.empty(unique_features.size, dtype=np.intp)
+        column_of_unique[np.argsort(first_index, kind='stable')] = np.arange(unique_features.size, dtype=np.intp)
+        columns = column_of_unique[inverse]
+        rows = np.repeat(np.arange(len(token_lists), dtype=np.intp), features_per_text)
+        feature_count = unique_features.size
+        del all_features, unique_features, first_index, inverse, column_of_unique
+        print(f"Vocabulary built. Found {feature_count} unique features.")
 
-        print(f"Vocabulary built. Found {len(feature_to_col_idx)} unique features.")
-
-        def create_sparse_matrix(doc_features_list, num_docs, feature_map):
-            rows, cols, data = [], [], []
-            for doc_id, features in enumerate(doc_features_list):
-                if features.size > 0:
-                    unique_doc_features, counts = np.unique(features, return_counts=True)
-                    for feature, count in zip(unique_doc_features, counts):
-                        if feature in feature_map:
-                            rows.append(doc_id)
-                            cols.append(feature_map[feature])
-                            data.append(count)
-            if not rows:
-                return coo_matrix((num_docs, len(feature_map)), dtype=np.float32).tocsr()
-            return coo_matrix((data, (rows, cols)), shape=(num_docs, len(feature_map)), dtype=np.float32).tocsr()
+        def create_sparse_matrix(first_text: int, num_docs: int):
+            """Documents by features: how often each feature occurs in each document."""
+            chosen = (rows >= first_text) & (rows < first_text + num_docs)
+            ones = np.ones(int(chosen.sum()), dtype=np.float32)
+            # tocsr() sums the repeated (document, feature) entries.
+            return coo_matrix((ones, (rows[chosen] - first_text, columns[chosen])), shape=(num_docs, feature_count), dtype=np.float32).tocsr()
 
         print("Creating sparse document-feature matrices...")
         if self.is_inter_comparison:
-            matrix1 = create_sparse_matrix(doc_features1, len(self.corpus), feature_to_col_idx)
-            matrix2 = create_sparse_matrix(doc_features2, len(self.corpus2), feature_to_col_idx)
+            matrix1 = create_sparse_matrix(0, len(self.corpus))
+            matrix2 = create_sparse_matrix(texts1, len(self.corpus2))
 
             print("Applying TF-IDF transformation...")
             combined_matrix = vstack([matrix1, matrix2])
@@ -1052,7 +1078,7 @@ class Flame:
             print("Calculating inter-corpus Cosine similarity (sparse TF-IDF output)...")
             self.dist_mat = cosine_similarity(matrix1_tfidf, matrix2_tfidf, dense_output=False)
         else:
-            matrix = create_sparse_matrix(doc_features1, len(self.corpus), feature_to_col_idx)
+            matrix = create_sparse_matrix(0, len(self.corpus))
 
             print("Applying TF-IDF transformation...")
             tfidf = TfidfTransformer()

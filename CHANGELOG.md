@@ -54,6 +54,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - plotly is imported only when the heatmap is drawn, so a run with `-gen_heatmap false` needs no plotly.
 - The Otsu threshold is computed by `flame_threshold.py`, with the values of scikit-image's
   `threshold_otsu`; scikit-image and the unused python-Levenshtein are no longer required.
+- The skip-gram features are hashed as uint64 in one pass over the corpus, with the same hash
+  values and similarity matrix as before; on 899 FSDB tenors the similarity step takes 4.6 s in
+  place of 13.4 s and the run's peak memory is 0.66 GB in place of 1.1 GB.
 
 ### Fixed
 

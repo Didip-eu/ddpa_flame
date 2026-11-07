@@ -49,6 +49,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
   `gen_*` report can be switched off. `fargv` is not required.
 - plotly is imported only for the heatmap.
+- The Otsu threshold is computed in `flame_threshold.py`, equal to scikit-image's `threshold_otsu`
+  on 3,000 random score sets. scikit-image and python-Levenshtein are not required.
 
 ### Fixed
 

@@ -62,6 +62,7 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   names by their first number from 1000 to 2999. A dated text is placed left of an undated one.
 - Shared blocks of equal length in `similarity_summary.tsv` are ordered by their text, so the file
   is the same on every run.
+- The comparison report escapes the texts and file names it shows.
 
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 

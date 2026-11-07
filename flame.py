@@ -1,6 +1,7 @@
 import numpy as np
 import glob
 import hashlib
+import html
 import json
 import math
 import os
@@ -1151,6 +1152,16 @@ def fold_for_compare(text: str) -> str:
     return fold_medieval_orthography(normalize_for_compare(text))
 
 
+def _text_html(text: str) -> str:
+    """Text for an HTML text node: &, < and > escaped."""
+    return html.escape(text, quote=False)
+
+
+def _match_html(text: str) -> str:
+    """A matched passage for the comparison report: escaped, each punctuation mark in its span."""
+    return re.sub(r'[^\w\s]', lambda mark: f'<span class="punct-in-match">{_text_html(mark.group())}</span>', text)
+
+
 def classify_gap(gap1_tokens: List[str], gap2_tokens: List[str], fuzzy_threshold: float) -> Tuple[str, float]:
     """Classifies the words sitting between two matches.
 
@@ -1470,8 +1481,8 @@ class SimilarityVisualizer:
         """
         words1 = [token for token in gap1_tokens if token.isalnum()]
         words2 = [token for token in gap2_tokens if token.isalnum()]
-        str1 = SimilarityVisualizer.detokenizer.detokenize(gap1_tokens)
-        str2 = SimilarityVisualizer.detokenizer.detokenize(gap2_tokens)
+        str1 = _text_html(SimilarityVisualizer.detokenizer.detokenize(gap1_tokens))
+        str2 = _text_html(SimilarityVisualizer.detokenizer.detokenize(gap2_tokens))
 
         if not str1 and not str2:
             return "", ""
@@ -1501,8 +1512,8 @@ class SimilarityVisualizer:
         map_analysis_to_original2 = [i for i, token in enumerate(text2_original_tokens) if token.isalnum()]
 
         if not analysis_tokens1 or not analysis_tokens2:
-            return SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens), \
-                   SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens)
+            return _text_html(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens)), \
+                   _text_html(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens))
 
         matcher = SequenceMatcher(None, analysis_tokens1, analysis_tokens2, autojunk=False)
         raw_matching_blocks = matcher.get_matching_blocks()
@@ -1523,12 +1534,12 @@ class SimilarityVisualizer:
                 if gap2_html: highlighted_html_text2.append(gap2_html)
 
             m_txt1_raw = SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[a_start_orig:a_end_orig])
-            m_txt1_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt1_raw)
+            m_txt1_processed = _match_html(m_txt1_raw)
             m_txt1_html = f'<span class="highlight clickable" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt1_processed}</span>'
             highlighted_html_text1.append(m_txt1_html)
 
             m_txt2_raw = SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[b_start_orig:b_end_orig])
-            m_txt2_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt2_raw)
+            m_txt2_processed = _match_html(m_txt2_raw)
             m_txt2_html = f'<span class="match-text" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt2_processed}</span>'
             highlighted_html_text2.append(m_txt2_html)
 
@@ -1546,9 +1557,9 @@ class SimilarityVisualizer:
             if tail2_html: highlighted_html_text2.append(tail2_html)
         else:
             if pos1 < len(text1_original_tokens):
-                highlighted_html_text1.append(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[pos1:]))
+                highlighted_html_text1.append(_text_html(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[pos1:])))
             if pos2 < len(text2_original_tokens):
-                highlighted_html_text2.append(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[pos2:]))
+                highlighted_html_text2.append(_text_html(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[pos2:])))
 
         return " ".join(filter(None, highlighted_html_text1)), " ".join(filter(None, highlighted_html_text2))
 
@@ -1856,8 +1867,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 max_gap_words=analyzer.args.max_gap_words,
                 fuzz_threshold=analyzer.args.fuzz_threshold
             )
-            f1 = display_path(path1, root1)
-            f2 = display_path(path2, root2)
+            f1 = _text_html(display_path(path1, root1))
+            f2 = _text_html(display_path(path2, root2))
             segment = f'<div class="comparison-block" data-score="{score:.4f}" data-pair-id="{unique_pair_id}">' \
                       f'<h3>Comparison: {f1} &harr; {f2}</h3>' \
                       f'<div class="similarity-score">Cosine Similarity: {score:.4f}</div>' \

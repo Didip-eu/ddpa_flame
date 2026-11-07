@@ -54,6 +54,7 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - The skip-gram features are hashed as uint64 in one pass over the corpus. Hashes and similarity
   matrix equal 4acabd2 on 100, 295 and 899 FSDB tenors and on a 100 x 295 run; on 899 tenors the
   similarity step takes 4.6 s (4acabd2: 13.4 s) and the run peaks at 0.66 GB (4acabd2: 1.1 GB).
+- The reports tokenize each text once per run, and the clustering folds each distinct token once.
 
 ### Fixed
 

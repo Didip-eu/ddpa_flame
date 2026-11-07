@@ -18,6 +18,7 @@ except ImportError:  # Pyodide has no rapidfuzz; flame_fuzz gives the same value
 from itertools import chain, combinations
 from difflib import SequenceMatcher
 from collections import defaultdict, Counter
+from functools import lru_cache
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional
 import tempfile
@@ -971,6 +972,13 @@ class Flame:
         unique_tokens = sorted(list(all_tokens))
         return {token: i for i, token in enumerate(unique_tokens)}
 
+    def display_tokens(self, corpus: List[str]) -> List[List[str]]:
+        """The word_tokenize tokens of each text of one of this run's corpora, tokenized once per run."""
+        cache = self.__dict__.setdefault('_display_tokens', {})
+        if id(corpus) not in cache:
+            cache[id(corpus)] = [word_tokenize(text) for text in corpus]
+        return cache[id(corpus)]
+
     def tokens_to_int(self, tokens: List[str]) -> List[int]:
         return [self.encoder[token] for token in tokens if token in self.encoder]
 
@@ -1146,7 +1154,9 @@ def fold_medieval_orthography(text: str) -> str:
     return re.sub(r'(.)\1+', r'\1', text)                  # ss -> s, nn -> n
 
 
+@lru_cache(maxsize=1 << 16)
 def fold_for_compare(text: str) -> str:
+    """A token or a run of tokens as compared: normalized, then folded."""
     return fold_medieval_orthography(normalize_for_compare(text))
 
 
@@ -1825,8 +1835,8 @@ document.addEventListener("DOMContentLoaded", function() {
                     continue
                 similar_pairs.append((i, j, score))
         similar_pairs.sort(key=lambda x: x[2], reverse=True)
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
 
         for pair in tqdm.tqdm(similar_pairs, desc="Generating HTML pairs"):
             i, j, score = pair
@@ -1925,8 +1935,8 @@ document.addEventListener("DOMContentLoaded", function() {
         cluster_min = int(cluster_min)
         if analyzer.dist_mat is None or not analyzer.corpus:
             return None
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
         if analyzer.is_inter_comparison:
             doc_names1 = [display_path(p, analyzer.corpus_root) for p in analyzer.file_paths]
             doc_names2 = [display_path(p, analyzer.corpus_root2) for p in analyzer.file_paths2]
@@ -2332,9 +2342,9 @@ document.addEventListener("DOMContentLoaded", function() {
         else:
             header = "DocumentFilename\tSimilarityFrequency\tRelatedDocuments\tLongSimilarities(>4words)\n"
         rows = [header]
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
         if analyzer.is_inter_comparison:
-            display_token_corpus2 = [word_tokenize(text) for text in analyzer.corpus2]
+            display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2)
         else:
             display_token_corpus2 = display_token_corpus1
         for i in tqdm.tqdm(range(len(analyzer.corpus)), desc="Generating TSV summary"):
@@ -2373,8 +2383,8 @@ document.addEventListener("DOMContentLoaded", function() {
             rows = ["File_1\tFile_2\tClusterID\tVariation_Type\tToken_1\tToken_2\n"]
         else:
             rows = ["File_1\tFile_2\tVariation_Type\tToken_1\tToken_2\n"]
-        display_token_corpus1 = [word_tokenize(text) for text in analyzer.corpus]
-        display_token_corpus2 = [word_tokenize(text) for text in (analyzer.corpus2 or analyzer.corpus)]
+        display_token_corpus1 = analyzer.display_tokens(analyzer.corpus)
+        display_token_corpus2 = analyzer.display_tokens(analyzer.corpus2 or analyzer.corpus)
         dist_mat_coo = analyzer.dist_mat.tocoo()
         for i, j, score in tqdm.tqdm(zip(dist_mat_coo.row, dist_mat_coo.col, dist_mat_coo.data), desc="Analyzing linguistic variations", total=dist_mat_coo.nnz):
             if score < similarity_threshold: continue
@@ -2469,7 +2479,7 @@ document.addEventListener("DOMContentLoaded", function() {
             if key not in documents:
                 texts, paths = sides[side]
                 text = texts[index]
-                tokens = word_tokenize(text)
+                tokens = analyzer.display_tokens(texts)[index]
                 spans = _token_char_spans(tokens, text)
                 offsets = None
                 try:

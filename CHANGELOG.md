@@ -41,6 +41,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `flame/web.py`: a run on texts given as JSON, for a browser worker; its results come as one ZIP
   with FLAME's files, `pairs.tsv` with document names, and `run.json` with the parameters, the
   time and the memory of the run.
+- `pyproject.toml`: FLAME installs as the package `flame` with the command `flame`, as a pure-Python
+  wheel; the extras `native`, `heatmap` and `ddp` add rapidfuzz and tokenizers, plotly, and httpx.
+  `requirements.txt` installs it with all three.
 
 ### Changed
 

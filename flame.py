@@ -11,7 +11,10 @@ import unicodedata
 import argparse
 from datetime import datetime
 import tqdm
-from rapidfuzz import fuzz
+try:
+    from rapidfuzz import fuzz
+except ImportError:  # Pyodide has no rapidfuzz; flame_fuzz gives the same values
+    import flame_fuzz as fuzz
 from itertools import chain, combinations
 from difflib import SequenceMatcher
 from collections import defaultdict, Counter

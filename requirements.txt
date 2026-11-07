@@ -1,6 +1,7 @@
 numpy
 nltk
 plotly
+# rapidfuzz is a fast native build; without it flame_fuzz gives the same values in pure Python.
 rapidfuzz
 scikit-learn
 scipy

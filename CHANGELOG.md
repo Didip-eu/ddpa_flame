@@ -31,6 +31,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   alignment per pair as character offsets into each file (`label_1` / `label_2` as
   `[start, end, LABEL]`, plus `segments` linking the two sides), for integration with other
   tools. Existing outputs are unchanged.
+- `flame_fuzz.py`: the Levenshtein distance and Indel ratio of rapidfuzz in pure Python, with
+  the same values; FLAME uses it where rapidfuzz is not installed, as in Pyodide.
 
 ### Changed
 

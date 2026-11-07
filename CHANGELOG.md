@@ -49,6 +49,11 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
   `gen_*` report can be switched off. `fargv` is not required.
 
+### Fixed
+
+- A file name that starts with a year or `undated` and an underscore is dated by that prefix, other
+  names by their first number from 1000 to 2999. A dated text is placed left of an undated one.
+
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 
 1. **Table 1 caption wording (not a contradiction between the tables).** Tables 1 and 2 report the

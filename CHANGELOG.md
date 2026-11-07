@@ -65,6 +65,11 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - The command line is read with argparse: a boolean on its own turns the option on, and with a
   value (`true`, `false`, `yes`, `no`, `1`, `0`) sets it either way, so a `gen_*` report can be
   switched off. `fargv` is no longer required.
+- The reports tokenize with `flame_tokens.py`, words and single other characters as written, in
+  place of nltk's `word_tokenize` and `TreebankWordDetokenizer`: no English sentence model, no
+  rewritten quotes, the same tokens with every nltk version. nltk and its Punkt data are no longer
+  required. Scores and pairs are unchanged; where a match meets a token such as `4/7`, its span
+  can end a few characters earlier or later.
 
 ### Fixed
 

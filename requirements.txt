@@ -1,5 +1,4 @@
 numpy
-nltk
 plotly
 # rapidfuzz and tokenizers are fast native builds; without them flame_fuzz and flame_bpe give
 # the same results in pure Python, as in Pyodide.

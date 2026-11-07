@@ -26,9 +26,7 @@ from scipy.sparse import coo_matrix, save_npz, vstack
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfTransformer
 from flame_threshold import threshold_otsu
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.tokenize.treebank import TreebankWordDetokenizer
+import flame_tokens
 try:
     from tokenizers import Tokenizer
     from tokenizers.models import BPE
@@ -973,10 +971,10 @@ class Flame:
         return {token: i for i, token in enumerate(unique_tokens)}
 
     def display_tokens(self, corpus: List[str]) -> List[List[str]]:
-        """The word_tokenize tokens of each text of one of this run's corpora, tokenized once per run."""
+        """The display tokens of each text of one of this run's corpora, tokenized once per run."""
         cache = self.__dict__.setdefault('_display_tokens', {})
         if id(corpus) not in cache:
-            cache[id(corpus)] = [word_tokenize(text) for text in corpus]
+            cache[id(corpus)] = [flame_tokens.tokenize(text) for text in corpus]
         return cache[id(corpus)]
 
     def tokens_to_int(self, tokens: List[str]) -> List[int]:
@@ -1335,34 +1333,21 @@ def _text_key(text: str) -> str:
 
 # --- Character offsets for the spans report -----------------------------------
 # The engine works on the whitespace-collapsed text and the reports on its
-# word_tokenize tokens; neither is what another application holds, which is the
+# display tokens; neither is what another application holds, which is the
 # file itself. These helpers carry a token range back to the characters of the
 # file, so `open(path, encoding='utf-8', newline='').read()[start:end]` is the
 # span the report names.
 
-_QUOTE_FORMS = {'``': ('"', '``', "''"), "''": ('"', "''", '``')}
-
 
 def _token_char_spans(tokens: List[str], text: str) -> Optional[List[Tuple[int, int]]]:
-    """(start, end) of each word_tokenize token in `text`, or None if one is lost.
-
-    word_tokenize returns its tokens in order and only rewrites double quotes
-    (to `` and ''), so a forward search that also accepts the original quote
-    finds every token. Anything else between two tokens has to be whitespace;
-    if it is not, the tokenizer changed the text in a way this does not know,
-    and None says so instead of an offset that points at the wrong word.
-    """
+    """(start, end) of each display token in `text`, or None if one is not found in order."""
     spans, cursor = [], 0
     for token in tokens:
-        best = None
-        for form in _QUOTE_FORMS.get(token, (token,)):
-            found = text.find(form, cursor)
-            if found >= 0 and (best is None or found < best[0]):
-                best = (found, found + len(form))
-        if best is None or text[cursor:best[0]].strip():
+        found = text.find(token, cursor)
+        if found < 0 or text[cursor:found].strip():
             return None
-        spans.append(best)
-        cursor = best[1]
+        spans.append((found, found + len(token)))
+        cursor = found + len(token)
     return spans
 
 
@@ -1455,7 +1440,6 @@ def align_pair_segments(tokens1: List[str], tokens2: List[str], max_gap_words: i
 
 
 class SimilarityVisualizer:
-    detokenizer = TreebankWordDetokenizer()
 
     @staticmethod
     def _extract_year_from_filename(filename: str) -> int:
@@ -1479,8 +1463,8 @@ class SimilarityVisualizer:
         """
         words1 = [token for token in gap1_tokens if token.isalnum()]
         words2 = [token for token in gap2_tokens if token.isalnum()]
-        str1 = SimilarityVisualizer.detokenizer.detokenize(gap1_tokens)
-        str2 = SimilarityVisualizer.detokenizer.detokenize(gap2_tokens)
+        str1 = flame_tokens.detokenize(gap1_tokens)
+        str2 = flame_tokens.detokenize(gap2_tokens)
 
         if not str1 and not str2:
             return "", ""
@@ -1510,8 +1494,8 @@ class SimilarityVisualizer:
         map_analysis_to_original2 = [i for i, token in enumerate(text2_original_tokens) if token.isalnum()]
 
         if not analysis_tokens1 or not analysis_tokens2:
-            return SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens), \
-                   SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens)
+            return flame_tokens.detokenize(text1_original_tokens), \
+                   flame_tokens.detokenize(text2_original_tokens)
 
         matcher = SequenceMatcher(None, analysis_tokens1, analysis_tokens2, autojunk=False)
         raw_matching_blocks = matcher.get_matching_blocks()
@@ -1531,12 +1515,12 @@ class SimilarityVisualizer:
                 if gap1_html: highlighted_html_text1.append(gap1_html)
                 if gap2_html: highlighted_html_text2.append(gap2_html)
 
-            m_txt1_raw = SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[a_start_orig:a_end_orig])
+            m_txt1_raw = flame_tokens.detokenize(text1_original_tokens[a_start_orig:a_end_orig])
             m_txt1_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt1_raw)
             m_txt1_html = f'<span class="highlight clickable" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt1_processed}</span>'
             highlighted_html_text1.append(m_txt1_html)
 
-            m_txt2_raw = SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[b_start_orig:b_end_orig])
+            m_txt2_raw = flame_tokens.detokenize(text2_original_tokens[b_start_orig:b_end_orig])
             m_txt2_processed = re.sub(r'([^\w\s])', r'<span class="punct-in-match">\1</span>', m_txt2_raw)
             m_txt2_html = f'<span class="match-text" data-match-id="{m_id}" data-pair-id="{unique_pair_id}">{m_txt2_processed}</span>'
             highlighted_html_text2.append(m_txt2_html)
@@ -1555,9 +1539,9 @@ class SimilarityVisualizer:
             if tail2_html: highlighted_html_text2.append(tail2_html)
         else:
             if pos1 < len(text1_original_tokens):
-                highlighted_html_text1.append(SimilarityVisualizer.detokenizer.detokenize(text1_original_tokens[pos1:]))
+                highlighted_html_text1.append(flame_tokens.detokenize(text1_original_tokens[pos1:]))
             if pos2 < len(text2_original_tokens):
-                highlighted_html_text2.append(SimilarityVisualizer.detokenizer.detokenize(text2_original_tokens[pos2:]))
+                highlighted_html_text2.append(flame_tokens.detokenize(text2_original_tokens[pos2:]))
 
         return " ".join(filter(None, highlighted_html_text1)), " ".join(filter(None, highlighted_html_text2))
 
@@ -2356,7 +2340,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 for a, _, size in sm.get_matching_blocks():
                     if size > 4:
                         segment = display_token_corpus1[i][a:a+size]
-                        long_segments.add(SimilarityVisualizer.detokenizer.detokenize(segment))
+                        long_segments.add(flame_tokens.detokenize(segment))
             if analyzer.is_inter_comparison:
                 related_doc_names = sorted([display_path(analyzer.file_paths2[j], analyzer.corpus_root2)
                                             for j in related_docs_indices])

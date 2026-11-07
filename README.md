@@ -73,7 +73,6 @@ Requires Python 3.10 or newer and pip 26.1 or newer. A virtual environment is re
 git clone https://github.com/kreeedit/FLAME && cd FLAME
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 ```
 
 A standalone GUI build without a Python environment: `pip install pyinstaller && pyinstaller FlameApp.spec` gives `dist/FlameApp/` (details in `docs/CLI.md`).

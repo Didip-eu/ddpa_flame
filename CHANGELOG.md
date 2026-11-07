@@ -48,6 +48,7 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `html_comparsion.png` renamed to `html_comparison.png`.
 - The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
   `gen_*` report can be switched off. `fargv` is not required.
+- plotly is imported only for the heatmap.
 
 ### Fixed
 

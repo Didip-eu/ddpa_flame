@@ -2561,92 +2561,96 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main():
+def run(args: argparse.Namespace) -> None:
+    """One FLAME run with the parameters of parse_args: the reports go to the working directory."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        print(f"Created temporary directory: {tmpdir}")
+        analyzer = Flame(args=args, tmp_dir=tmpdir)
+        analyzer.load_corpus()
+        if not analyzer.corpus:
+            print("Execution halted because no documents were loaded. Please check the input path and file suffix.")
+            return
+
+        # Trigger unsupervised learning auto-tune step if selected
+        if analyzer.args.auto_tune:
+            analyzer.auto_tune_parameters()
+
+        if (analyzer.args.ngram - analyzer.args.n_out) < 1:
+            raise ValueError(f"N-gram size ({analyzer.args.ngram}) minus n-out ({analyzer.args.n_out}) must be at least 1.")
+
+        analyzer.compute_similarity_matrix()
+        if analyzer.args.no_reports:
+            print("\n--- Report generation skipped due to -no_reports flag. ---")
+        else:
+            print("\n--- Generating Reports ---")
+
+            if str(analyzer.args.similarity_threshold).lower() == 'auto':
+                final_threshold = analyzer._determine_auto_threshold(method=analyzer.args.auto_threshold_method)
+            else:
+                final_threshold = float(analyzer.args.similarity_threshold)
+
+            if analyzer.args.gen_heatmap:
+                if analyzer.dist_mat.shape[0] < 2000 and analyzer.dist_mat.shape[1] < 2000:
+                    SimilarityVisualizer.plot_similarity_heatmap(analyzer)
+                else:
+                    print(f"Skipping heatmap generation for large matrix ({analyzer.dist_mat.shape[0]}x{analyzer.dist_mat.shape[1]}).")
+            else:
+                print("Skipping heatmap generation as per configuration.")
+
+            if analyzer.args.gen_comparison_html:
+                SimilarityVisualizer.generate_comparison_html(analyzer, similarity_threshold=final_threshold)
+            else:
+                print("Skipping interactive HTML generation as per configuration.")
+
+            # Clustering has to run before the TSVs, because both of them carry
+            # a ClusterID column when it does. Its own report file is written
+            # last, once the clustering they consumed is settled.
+            clusters = None
+            if analyzer.args.gen_clusters:
+                clusters = SimilarityVisualizer.compute_clusters(
+                    analyzer, similarity_threshold=final_threshold,
+                    cluster_threshold=analyzer.args.cluster_threshold,
+                    cluster_min=analyzer.args.cluster_min)
+            else:
+                print("Skipping clustering as per configuration.")
+
+            if analyzer.args.gen_summary_tsv:
+                SimilarityVisualizer.generate_similarity_summary_tsv(analyzer, similarity_threshold=final_threshold, clusters=clusters)
+            else:
+                print("Skipping summary TSV generation as per configuration.")
+
+            if analyzer.args.gen_linguistic_tsv:
+                SimilarityVisualizer.generate_linguistic_summary_tsv(analyzer, similarity_threshold=final_threshold, clusters=clusters)
+            else:
+                print("Skipping linguistic TSV generation as per configuration.")
+
+            if analyzer.args.gen_spans_jsonl:
+                SimilarityVisualizer.generate_spans_jsonl(analyzer, similarity_threshold=final_threshold, clusters=clusters)
+
+            if analyzer.args.gen_clusters:
+                SimilarityVisualizer.generate_cluster_report(analyzer, clusters)
+
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    """The command line: parameters from argv, errors printed rather than raised."""
     print("--- Formulaic Language Analysis in Medieval Expressions ---")
     print("For command-line options, run with the -h flag.")
 
-    parsed_args = parse_args()
+    parsed_args = parse_args(argv)
+    if not parsed_args.input_path:
+        print("\n\033[91mError: Required argument -input_path is missing.\033[0m")
+        print("You must specify the directory containing your text files, or a glob pattern.")
+        print("\n\033[92mExample Usage:\033[0m")
+        print(f"  python flame.py -input_path /path/to/your/corpus")
+        print(f"  python flame.py -input_path './corpus/SUBSET**/*.txt'")
+        print("\nNote: arguments take a single leading dash (-input_path, not --input_path).")
+        print("For a full list of all available options, run:")
+        print(f"  python flame.py -h")
+        return
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            print(f"Created temporary directory: {tmpdir}")
-            analyzer = Flame(args=parsed_args, tmp_dir=tmpdir)
-
-            if not analyzer.args.input_path:
-                print("\n\033[91mError: Required argument -input_path is missing.\033[0m")
-                print("You must specify the directory containing your text files, or a glob pattern.")
-                print("\n\033[92mExample Usage:\033[0m")
-                print(f"  python flame.py -input_path /path/to/your/corpus")
-                print(f"  python flame.py -input_path './corpus/SUBSET**/*.txt'")
-                print("\nNote: arguments take a single leading dash (-input_path, not --input_path).")
-                print("For a full list of all available options, run:")
-                print(f"  python flame.py -h")
-                return
-
-            analyzer.load_corpus()
-            if not analyzer.corpus:
-                print("Execution halted because no documents were loaded. Please check the input path and file suffix.")
-                return
-
-            # Trigger unsupervised learning auto-tune step if selected
-            if analyzer.args.auto_tune:
-                analyzer.auto_tune_parameters()
-
-            if (analyzer.args.ngram - analyzer.args.n_out) < 1:
-                raise ValueError(f"N-gram size ({analyzer.args.ngram}) minus n-out ({analyzer.args.n_out}) must be at least 1.")
-
-            analyzer.compute_similarity_matrix()
-            if analyzer.args.no_reports:
-                print("\n--- Report generation skipped due to -no_reports flag. ---")
-            else:
-                print("\n--- Generating Reports ---")
-
-                if str(analyzer.args.similarity_threshold).lower() == 'auto':
-                    final_threshold = analyzer._determine_auto_threshold(method=analyzer.args.auto_threshold_method)
-                else:
-                    final_threshold = float(analyzer.args.similarity_threshold)
-
-                if analyzer.args.gen_heatmap:
-                    if analyzer.dist_mat.shape[0] < 2000 and analyzer.dist_mat.shape[1] < 2000:
-                        SimilarityVisualizer.plot_similarity_heatmap(analyzer)
-                    else:
-                        print(f"Skipping heatmap generation for large matrix ({analyzer.dist_mat.shape[0]}x{analyzer.dist_mat.shape[1]}).")
-                else:
-                    print("Skipping heatmap generation as per configuration.")
-
-                if analyzer.args.gen_comparison_html:
-                    SimilarityVisualizer.generate_comparison_html(analyzer, similarity_threshold=final_threshold)
-                else:
-                    print("Skipping interactive HTML generation as per configuration.")
-
-                # Clustering has to run before the TSVs, because both of them carry
-                # a ClusterID column when it does. Its own report file is written
-                # last, once the clustering they consumed is settled.
-                clusters = None
-                if analyzer.args.gen_clusters:
-                    clusters = SimilarityVisualizer.compute_clusters(
-                        analyzer, similarity_threshold=final_threshold,
-                        cluster_threshold=analyzer.args.cluster_threshold,
-                        cluster_min=analyzer.args.cluster_min)
-                else:
-                    print("Skipping clustering as per configuration.")
-
-                if analyzer.args.gen_summary_tsv:
-                    SimilarityVisualizer.generate_similarity_summary_tsv(analyzer, similarity_threshold=final_threshold, clusters=clusters)
-                else:
-                    print("Skipping summary TSV generation as per configuration.")
-
-                if analyzer.args.gen_linguistic_tsv:
-                    SimilarityVisualizer.generate_linguistic_summary_tsv(analyzer, similarity_threshold=final_threshold, clusters=clusters)
-                else:
-                    print("Skipping linguistic TSV generation as per configuration.")
-
-                if analyzer.args.gen_spans_jsonl:
-                    SimilarityVisualizer.generate_spans_jsonl(analyzer, similarity_threshold=final_threshold, clusters=clusters)
-
-                if analyzer.args.gen_clusters:
-                    SimilarityVisualizer.generate_cluster_report(analyzer, clusters)
-
+        run(parsed_args)
     except Exception as e:
         print(f"\nAn error occurred: {e}")
     finally:

@@ -2322,7 +2322,7 @@ document.addEventListener("DOMContentLoaded", function() {
             else:
                 related_doc_names = sorted([display_path(analyzer.file_paths[j], analyzer.corpus_root)
                                             for j in related_docs_indices])
-            long_segments_str = ' | '.join(f'"{s}"' for s in sorted(long_segments, key=len, reverse=True)) or 'None'
+            long_segments_str = ' | '.join(f'"{s}"' for s in sorted(long_segments, key=lambda s: (-len(s), s))) or 'None'
             related_docs_str = ', '.join(related_doc_names) or 'None'
             cluster_cell = f"{clusters['cluster_ids1'][i]}\t" if clusters else ""
             rows.append(f"{display_path(analyzer.file_paths[i], analyzer.corpus_root)}\t{cluster_cell}{len(related_doc_names)}\t{related_docs_str}\t{long_segments_str}\n")

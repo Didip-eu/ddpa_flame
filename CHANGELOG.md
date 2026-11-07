@@ -47,6 +47,11 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
 
+### Fixed
+
+- `similarity_summary.tsv` lists the shared blocks of equal length in the same order on every run;
+  their order followed Python's per-process string hashing.
+
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 
 1. **Table 1 caption wording (not a contradiction between the tables).** Tables 1 and 2 report the

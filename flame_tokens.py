@@ -5,9 +5,11 @@ import re
 import unicodedata
 
 TOKEN = re.compile(r"\w+|[^\w\s]")
-# No space goes before these, nor after OPENING.
-CLOSING = frozenset(".,;:!?)]}%'\"")
+# No space goes before CLOSING, after OPENING, or on either side of JOINING; double quotes
+# alternate between opening and closing.
+CLOSING = frozenset(".,;:!?)]}%'")
 OPENING = frozenset("([{")
+JOINING = frozenset("/")
 
 
 def tokenize(text: str) -> list[str]:
@@ -15,16 +17,19 @@ def tokenize(text: str) -> list[str]:
     return TOKEN.findall(text)
 
 
-def _attaches(previous: str, token: str) -> bool:
-    return token[0] in CLOSING or previous[-1] in OPENING or unicodedata.combining(token[0]) > 0
-
-
 def detokenize(tokens: list[str]) -> str:
-    """Tokens as running text: a space between two, except before closing punctuation and combining
-    marks and after an opening bracket."""
+    """Tokens as running text: a space between two, except before closing punctuation, combining
+    marks and a closing quote, after an opening bracket or quote, and around a slash."""
     if not tokens:
         return ""
     parts = [tokens[0]]
+    quote_open = tokens[0] == '"'
     for previous, token in zip(tokens, tokens[1:]):
-        parts.append(token if _attaches(previous, token) else " " + token)
+        closes_quote = token == '"' and quote_open
+        if token == '"':
+            quote_open = not quote_open
+        opened_quote = previous == '"' and quote_open and not closes_quote
+        attached = (token[0] in CLOSING or closes_quote or unicodedata.combining(token[0]) > 0
+                    or previous[-1] in OPENING or opened_quote or token in JOINING or previous in JOINING)
+        parts.append(token if attached else " " + token)
     return "".join(parts)

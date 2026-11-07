@@ -16,15 +16,15 @@ vocabulary, and renders every match as an interactive side-by-side alignment.
 
 FLAME runs five stages in a fixed order. The full description is in [docs/METHOD.md](docs/METHOD.md), and the design rationale is in Kovács (in preparation).
 
-**1. Character normalization.** Text is lower-cased, ligatures are expanded, and MUFI allographs (ſ→s, ꝛ→r, …) are mapped to base letters (Haugen 2009). An adaptive learner folds any other frequent out-of-alphabet character by its Unicode decomposition (é→e), controlled by `char_norm_alphabet` and `char_norm_min_freq`. Spelling and inflection are left alone unless the optional `bigram_normalization_enabled` and `phonetic_reduction_enabled` layers are switched on ([`Flame.load_corpus()`](flame.py#L668), [`AdaptiveAlphabet.learn_mappings()`](flame.py#L253)).
+**1. Character normalization.** Text is lower-cased, ligatures are expanded, and MUFI allographs (ſ→s, ꝛ→r, …) are mapped to base letters (Haugen 2009). An adaptive learner folds any other frequent out-of-alphabet character by its Unicode decomposition (é→e), controlled by `char_norm_alphabet` and `char_norm_min_freq`. Spelling and inflection are left alone unless the optional `bigram_normalization_enabled` and `phonetic_reduction_enabled` layers are switched on ([`Flame.load_corpus()`](flame/analysis.py), [`AdaptiveAlphabet.learn_mappings()`](flame/analysis.py)).
 
-**2. Subword tokenization.** A BPE tokenizer (Sennrich et al. 2016) is trained on the normalized corpus. Its size is set by `-vocab_size`, either an integer or `auto`. With `auto`, the size is the number of frequent prefixes and suffixes that cover `vocab_coverage` of affix occurrences, plus 256 ([`suggest_vocab_size_optimized()`](flame.py#L70)).
+**2. Subword tokenization.** A BPE tokenizer (Sennrich et al. 2016) is trained on the normalized corpus. Its size is set by `-vocab_size`, either an integer or `auto`. With `auto`, the size is the number of frequent prefixes and suffixes that cover `vocab_coverage` of affix occurrences, plus 256 ([`suggest_vocab_size_optimized()`](flame/analysis.py)).
 
-**3. Gapped fingerprint.** Each window of `-ngram` tokens yields C(n, n − n_out) sub-grams, one for each way of dropping `-n_out` positions. Each sub-gram is hashed with a Rabin–Karp-style polynomial mod 2⁶¹ − 1 (Karp and Rabin 1987). A substituted, inserted, or deleted token breaks every contiguous n-gram that spans it, but at least one gapped sub-gram per affected window survives ([`Flame.leave_n_out_grams()`](flame.py#L962)).
+**3. Gapped fingerprint.** Each window of `-ngram` tokens yields C(n, n − n_out) sub-grams, one for each way of dropping `-n_out` positions. Each sub-gram is hashed with a Rabin–Karp-style polynomial mod 2⁶¹ − 1 (Karp and Rabin 1987). A substituted, inserted, or deleted token breaks every contiguous n-gram that spans it, but at least one gapped sub-gram per affected window survives ([`Flame.leave_n_out_grams()`](flame/analysis.py)).
 
-**4. Similarity and threshold.** The fingerprints form a sparse document-by-feature matrix, which is TF-IDF weighted, and pairs are compared by cosine similarity. With `-similarity_threshold auto`, Otsu's method (Otsu 1979) on the non-zero scores proposes the cutoff, which suits bimodal score distributions; `-similarity_threshold <float>` sets it directly ([`Flame.compute_similarity_matrix()`](flame.py#L993)).
+**4. Similarity and threshold.** The fingerprints form a sparse document-by-feature matrix, which is TF-IDF weighted, and pairs are compared by cosine similarity. With `-similarity_threshold auto`, Otsu's method (Otsu 1979) on the non-zero scores proposes the cutoff, which suits bimodal score distributions; `-similarity_threshold <float>` sets it directly ([`Flame.compute_similarity_matrix()`](flame/analysis.py)).
 
-**5. Alignment report.** Each pair above the threshold is re-aligned on the original tokens with a Ratcliff–Obershelp matcher (Ratcliff and Metzener 1988). Each short gap is then classified as a bridge, an orthographic variant (`fuzz_threshold`), or an insertion, in the HTML report and in `linguistic_variations.tsv` ([`highlight_similarities()`](flame.py#L1464), [`classify_gap()`](flame.py#L1127)).
+**5. Alignment report.** Each pair above the threshold is re-aligned on the original tokens with a Ratcliff–Obershelp matcher (Ratcliff and Metzener 1988). Each short gap is then classified as a bridge, an orthographic variant (`fuzz_threshold`), or an insertion, in the HTML report and in `linguistic_variations.tsv` ([`highlight_similarities()`](flame/analysis.py), [`classify_gap()`](flame/analysis.py)).
 
 ## Evaluation
 
@@ -73,7 +73,6 @@ Requires Python 3.10 or newer and pip 26.1 or newer. A virtual environment is re
 git clone https://github.com/kreeedit/FLAME && cd FLAME
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 ```
 
 A standalone GUI build without a Python environment: `pip install pyinstaller && pyinstaller FlameApp.spec` gives `dist/FlameApp/` (details in `docs/CLI.md`).
@@ -101,6 +100,30 @@ python flame.py -input_path './fsdb/DE-LANRWR**/*.htr.txt' -similarity_threshold
 ### Input paths
 
 `input_path` and `input_path2` take a **directory**, searched recursively for `file_suffix` (`.txt`), or a **glob pattern**, which alone decides which files are read. File lists are sorted, so runs are reproducible. Every report names a text by its path relative to the input root (`DE-LANRWR001/text.htr.txt`), so nested corpora that reuse one filename stay distinguishable. `**` is recursive only as a standalone path component.
+
+### Charters from the Monasterium NG API
+
+`flame_ddp.py` fetches charters from the Monasterium NG API into a new folder that FLAME reads like
+any other corpus. Each charter is named by its document id, its atom id or its Monasterium URL, in
+any mix:
+
+```bash
+python flame_ddp.py -api https://host/api/v1 -out ./corpus \
+    -ids 68341d4b2108faa659ab4381514ffcc4 https://www.monasterium.net/mom/Fontenay/x1203_d1e164108/charter
+python flame.py -input_path ./corpus
+```
+
+- `-ids_file` reads the values from a file, one or more per line, `#` for comments.
+- `-text` picks the text: `tenor` (default) or `abstract`. A charter without that text is skipped and listed.
+- `-dry_run` fetches and reports, and writes nothing. The output folder must be new or empty.
+- Each text is written as `<year>_<document id>.txt`, or `undated_<document id>.txt`. `manifest.tsv`
+  gives the atom id, the year, the text hash and the Monasterium URL per file, so every name in the
+  reports leads back to its charter; `fetch.json` records the API, its version and what was not found.
+
+In the GUI, the tab **4. Fetch from Monasterium** does the same and then sets the folder as the
+primary corpus path.
+
+The tests need the development requirements: `pip install -r requirements-dev.txt`, then `pytest`.
 
 ## Outputs
 

@@ -31,7 +31,7 @@ from typing import Callable, Dict, Iterator, List, NamedTuple, Optional, Sequenc
 try:
     from rapidfuzz.distance import Levenshtein
 except ImportError:  # Pyodide has no rapidfuzz; flame_fuzz gives the same values
-    from flame_fuzz import Levenshtein
+    from .fuzz import Levenshtein
 
 # Character k-gram length for the Jaccard prefilter (see _shingles).
 SHINGLE_K = 4

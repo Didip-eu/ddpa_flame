@@ -15,7 +15,7 @@ import tqdm
 try:
     from rapidfuzz import fuzz
 except ImportError:  # Pyodide has no rapidfuzz; flame_fuzz gives the same values
-    import flame_fuzz as fuzz
+    from . import fuzz
 from itertools import chain, combinations
 from difflib import SequenceMatcher
 from collections import defaultdict, Counter
@@ -26,8 +26,8 @@ import tempfile
 from scipy.sparse import coo_matrix, save_npz, vstack
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfTransformer
-from flame_threshold import threshold_otsu
-import flame_tokens
+from .threshold import threshold_otsu
+from . import tokens as flame_tokens
 try:
     from tokenizers import Tokenizer
     from tokenizers.models import BPE
@@ -35,8 +35,8 @@ try:
     from tokenizers.pre_tokenizers import Whitespace
 except ImportError:  # Pyodide has no tokenizers; flame_bpe trains the same vocabulary
     Tokenizer = None
-import flame_bpe
-import flame_clustering
+from . import bpe as flame_bpe
+from . import clustering as flame_clustering
 
 # The command line as launched, for the report's "reproduce with" line.
 _LAUNCH_ARGV = list(sys.argv)
@@ -2576,11 +2576,11 @@ def main():
                 print("\n\033[91mError: Required argument -input_path is missing.\033[0m")
                 print("You must specify the directory containing your text files, or a glob pattern.")
                 print("\n\033[92mExample Usage:\033[0m")
-                print(f"  python {__file__} -input_path /path/to/your/corpus")
-                print(f"  python {__file__} -input_path './corpus/SUBSET**/*.txt'")
+                print(f"  python flame.py -input_path /path/to/your/corpus")
+                print(f"  python flame.py -input_path './corpus/SUBSET**/*.txt'")
                 print("\nNote: arguments take a single leading dash (-input_path, not --input_path).")
                 print("For a full list of all available options, run:")
-                print(f"  python {__file__} -h")
+                print(f"  python flame.py -h")
                 return
 
             analyzer.load_corpus()

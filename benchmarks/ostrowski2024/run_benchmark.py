@@ -278,7 +278,7 @@ def provenance(seconds, dataset_md5, corpus_stats):
             versions[mod] = None
     # Dirty means the code that produced the numbers differs from the commit; the
     # results/ files this run overwrites do not count.
-    status = git('status', '--porcelain', '--untracked-files=no', '--', 'flame.py', 'flame_clustering.py',
+    status = git('status', '--porcelain', '--untracked-files=no', '--', 'flame.py', 'flame',
                  *[str(p.relative_to(REPO)) for p in HERE.glob('*.py')])
     return dict(git_commit=git('rev-parse', 'HEAD'),
                 git_dirty=bool(status),

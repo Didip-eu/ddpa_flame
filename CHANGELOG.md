@@ -31,9 +31,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   alignment per pair as character offsets into each file (`label_1` / `label_2` as
   `[start, end, LABEL]`, plus `segments` linking the two sides), for integration with other
   tools. Existing outputs are unchanged.
-- `flame_fuzz.py`: the Levenshtein distance and Indel ratio in pure Python, used where rapidfuzz is
+- `flame/fuzz.py`: the Levenshtein distance and Indel ratio in pure Python, used where rapidfuzz is
   not installed; equal to rapidfuzz on 200,000 random string pairs.
-- `flame_bpe.py`: a BPE trainer in pure Python, used where `tokenizers` is not installed; vocabulary,
+- `flame/bpe.py`: a BPE trainer in pure Python, used where `tokenizers` is not installed; vocabulary,
   merges and tokens equal `tokenizers` 0.23 with the `Whitespace` pre-tokenizer on 2 x 1,500 FSDB
   tenors at vocabulary sizes 300 to 8,000.
 - `flame_ddp.py` and the GUI tab *4. Fetch from Monasterium*: charters from the Monasterium NG
@@ -54,20 +54,23 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
 - plotly is imported only for the heatmap.
-- The Otsu threshold is computed in `flame_threshold.py`, equal to scikit-image's `threshold_otsu`
+- The Otsu threshold is computed in `flame/threshold.py`, equal to scikit-image's `threshold_otsu`
   on 3,000 random score sets. scikit-image and python-Levenshtein are not required.
 - The skip-gram features are hashed as uint64 in one pass over the corpus. Hashes and similarity
   matrix equal kreeedit/FLAME 4acabd2 on 100, 295 and 899 FSDB tenors and on a 100 x 295 run; on
   899 tenors the similarity step takes 4.6 s (4acabd2: 13.4 s) and the run peaks at 0.66 GB
   (4acabd2: 1.1 GB).
 - The reports tokenize each text once per run, and the clustering folds each distinct token once.
-- `flame_bpe.py` encodes the words of its training text by lookup.
+- `flame/bpe.py` encodes the words of its training text by lookup.
 - The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
   `gen_*` report can be switched off. `fargv` is not required.
-- The reports tokenize with `flame_tokens.py`: runs of word characters and single other
+- The reports tokenize with `flame/tokens.py`: runs of word characters and single other
   characters, each a substring of the text. nltk and its Punkt data are not required. On 295 and
   100 x 295 FSDB tenors, scores, pairs, segment and cluster counts equal kreeedit/FLAME 4acabd2;
   1 of 251 spans differs in length.
+- The code is the package `flame/` (`analysis`, `clustering`, `bpe`, `fuzz`, `threshold`, `tokens`);
+  `flame.py` runs its command line. Outputs equal the single-module layout on 295 and 100 x 295 FSDB
+  tenors.
 
 ### Fixed
 

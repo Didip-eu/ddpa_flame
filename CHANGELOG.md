@@ -78,6 +78,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - A file name that opens with a year and an underscore (`1182_...`), or with `undated_`, is dated
   by that alone; other names are dated by their first number from 1000 to 2999. An undated text
   is no longer placed left of a dated one.
+- The comparison report escapes the texts and file names it shows, so a `<` or `&` in a charter
+  stays text instead of breaking the page.
 
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 

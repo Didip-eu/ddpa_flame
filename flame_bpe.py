@@ -14,7 +14,8 @@ Training follows `tokenizers/src/models/bpe/trainer.rs`:
 - a pair merged a second time (it can return through another entry) takes the later rank, as the
   merges list of a saved model does when it is loaded again.
 
-Encoding applies the merges by rank, lowest rank first and leftmost first.
+Encoding applies the merges by rank, lowest rank first and leftmost first; a word of the training
+text is looked up in the splits training ended with, which are the same.
 """
 
 import heapq
@@ -32,22 +33,32 @@ def pre_tokenize(text: str) -> list[str]:
     return WHITESPACE.findall(text)
 
 
-def _merge_word(symbols: list[int], first: int, second: int, replacement: int) -> list[tuple[tuple[int, int], int]]:
-    """Merge every occurrence of (first, second) in place, left to right, and return the pair count
-    changes, as `Word::merge` of `tokenizers` does."""
-    changes = []
+def _merge_word(symbols: list[int], first: int, second: int, replacement: int, count: int,
+                pair_counts: dict, gained: dict, index: int) -> None:
+    """Merge every occurrence of (first, second) in a word, left to right, as `Word::merge` of
+    `tokenizers` does, and apply the change of each neighbouring pair, weighted by the word's count,
+    to pair_counts; a pair that gained is noted in gained with the word's index."""
     i = 0
-    while i < len(symbols):
-        if symbols[i] == first and i + 1 < len(symbols) and symbols[i + 1] == second:
+    while True:
+        try:
+            i = symbols.index(first, i)
+        except ValueError:
+            return
+        if i + 1 < len(symbols) and symbols[i + 1] == second:
             if i > 0:
-                changes.append(((symbols[i - 1], first), -1))
-                changes.append(((symbols[i - 1], replacement), 1))
+                before = symbols[i - 1]
+                pair_counts[(before, first)] -= count
+                pair = (before, replacement)
+                pair_counts[pair] += count
+                gained[pair].add(index)
             symbols[i:i + 2] = [replacement]
-            if i < len(symbols) - 1:
-                changes.append(((second, symbols[i + 1]), -1))
-                changes.append(((replacement, symbols[i + 1]), 1))
+            if i + 1 < len(symbols):
+                after = symbols[i + 1]
+                pair_counts[(second, after)] -= count
+                pair = (replacement, after)
+                pair_counts[pair] += count
+                gained[pair].add(index)
         i += 1
-    return changes
 
 
 class BpeTokenizer:
@@ -112,15 +123,16 @@ class BpeTokenizer:
             rank += 1
 
             gained = defaultdict(set)
+            first, second = pair
             for index in positions:
-                for changed, delta in _merge_word(words[index], pair[0], pair[1], new_id):
-                    pair_counts[changed] += delta * counts[index]
-                    if delta > 0:
-                        gained[changed].add(index)
+                _merge_word(words[index], first, second, new_id, counts[index], pair_counts, gained, index)
             for changed, indexes in gained.items():
                 if pair_counts[changed] > 0:
                     heapq.heappush(queue, (-pair_counts[changed], changed, order, indexes))
                     order += 1
+        # Applying the merges by rank to a training word gives the split training ended with.
+        self._cache = {word: [self.id_to_token[token_id] for token_id in symbols]
+                       for word, symbols in zip(word_counts, words)}
         return self
 
     def _encode_word(self, word: str) -> list[str]:

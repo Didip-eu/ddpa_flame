@@ -59,6 +59,7 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   place of 13.4 s and the run's peak memory is 0.66 GB in place of 1.1 GB.
 - The reports tokenize each text once per run, and the clustering folds each distinct token once;
   the outputs are the same.
+- `flame_bpe.py` encodes the words of its training text from the splits training ended with.
 
 ### Fixed
 

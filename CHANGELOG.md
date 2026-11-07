@@ -31,13 +31,13 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   alignment per pair as character offsets into each file (`label_1` / `label_2` as
   `[start, end, LABEL]`, plus `segments` linking the two sides), for integration with other
   tools. Existing outputs are unchanged.
-- `flame_fuzz.py`: the Levenshtein distance and Indel ratio of rapidfuzz in pure Python, with
-  the same values; FLAME uses it where rapidfuzz is not installed, as in Pyodide.
-- `flame_bpe.py`: a BPE trainer in pure Python that yields the vocabulary, merges and tokens of
-  Hugging Face `tokenizers` with the `Whitespace` pre-tokenizer; FLAME uses it where `tokenizers`
-  is not installed, as in Pyodide.
+- `flame_fuzz.py`: the Levenshtein distance and Indel ratio in pure Python, used where rapidfuzz is
+  not installed; equal to rapidfuzz on 200,000 random string pairs.
+- `flame_bpe.py`: a BPE trainer in pure Python, used where `tokenizers` is not installed; vocabulary,
+  merges and tokens equal `tokenizers` 0.23 with the `Whitespace` pre-tokenizer on 2 x 1,500 FSDB
+  tenors at vocabulary sizes 300 to 8,000.
 - `flame_ddp.py` and the GUI tab *4. Fetch from Monasterium*: charters from the Monasterium NG
-  API by document id, atom id or URL, written as `<year>_<id>.txt` with `manifest.tsv` and `fetch.json`.
+  API by document id, atom id or URL, one file per text, with `manifest.tsv` and `fetch.json`.
 
 ### Changed
 
@@ -53,33 +53,29 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - `CITATION.cff` and the README *Cite* block now give the concept DOI (10.5281/zenodo.15805448),
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
-- plotly is imported only when the heatmap is drawn, so a run with `-gen_heatmap false` needs no plotly.
-- The Otsu threshold is computed by `flame_threshold.py`, with the values of scikit-image's
-  `threshold_otsu`; scikit-image and the unused python-Levenshtein are no longer required.
-- The skip-gram features are hashed as uint64 in one pass over the corpus, with the same hash
-  values and similarity matrix as before; on 899 FSDB tenors the similarity step takes 4.6 s in
-  place of 13.4 s and the run's peak memory is 0.66 GB in place of 1.1 GB.
-- The reports tokenize each text once per run, and the clustering folds each distinct token once;
-  the outputs are the same.
-- `flame_bpe.py` encodes the words of its training text from the splits training ended with.
-- The command line is read with argparse: a boolean on its own turns the option on, and with a
-  value (`true`, `false`, `yes`, `no`, `1`, `0`) sets it either way, so a `gen_*` report can be
-  switched off. `fargv` is no longer required.
-- The reports tokenize with `flame_tokens.py`, words and single other characters as written, in
-  place of nltk's `word_tokenize` and `TreebankWordDetokenizer`: no English sentence model, no
-  rewritten quotes, the same tokens with every nltk version. nltk and its Punkt data are no longer
-  required. Scores and pairs are unchanged; where a match meets a token such as `4/7`, its span
-  can end a few characters earlier or later.
+- plotly is imported only for the heatmap.
+- The Otsu threshold is computed in `flame_threshold.py`, equal to scikit-image's `threshold_otsu`
+  on 3,000 random score sets. scikit-image and python-Levenshtein are not required.
+- The skip-gram features are hashed as uint64 in one pass over the corpus. Hashes and similarity
+  matrix equal kreeedit/FLAME 4acabd2 on 100, 295 and 899 FSDB tenors and on a 100 x 295 run; on
+  899 tenors the similarity step takes 4.6 s (4acabd2: 13.4 s) and the run peaks at 0.66 GB
+  (4acabd2: 1.1 GB).
+- The reports tokenize each text once per run, and the clustering folds each distinct token once.
+- `flame_bpe.py` encodes the words of its training text by lookup.
+- The command line is read with argparse. A boolean takes an optional `true` or `false`, so each
+  `gen_*` report can be switched off. `fargv` is not required.
+- The reports tokenize with `flame_tokens.py`: runs of word characters and single other
+  characters, each a substring of the text. nltk and its Punkt data are not required. On 295 and
+  100 x 295 FSDB tenors, scores, pairs, segment and cluster counts equal kreeedit/FLAME 4acabd2;
+  1 of 251 spans differs in length.
 
 ### Fixed
 
-- `similarity_summary.tsv` lists the shared blocks of equal length in the same order on every run;
-  their order followed Python's per-process string hashing.
-- A file name that opens with a year and an underscore (`1182_...`), or with `undated_`, is dated
-  by that alone; other names are dated by their first number from 1000 to 2999. An undated text
-  is no longer placed left of a dated one.
-- The comparison report escapes the texts and file names it shows, so a `<` or `&` in a charter
-  stays text instead of breaking the page.
+- Shared blocks of equal length in `similarity_summary.tsv` are ordered by their text, so the file
+  is the same on every run.
+- A file name that starts with a year or `undated` and an underscore is dated by that prefix, other
+  names by their first number from 1000 to 2999. A dated text is placed left of an undated one.
+- The comparison report escapes the texts and file names it shows.
 
 ### Documented discrepancies (article vs. code). Neither side has been changed, except the report fix noted in item 5.
 

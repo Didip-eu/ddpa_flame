@@ -51,6 +51,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
 - plotly is imported only for the heatmap.
 - The Otsu threshold is computed in `flame_threshold.py`, equal to scikit-image's `threshold_otsu`
   on 3,000 random score sets. scikit-image and python-Levenshtein are not required.
+- The skip-gram features are hashed as uint64 in one pass over the corpus. Hashes and similarity
+  matrix equal 4acabd2 on 100, 295 and 899 FSDB tenors and on a 100 x 295 run; on 899 tenors the
+  similarity step takes 4.6 s (4acabd2: 13.4 s) and the run peaks at 0.66 GB (4acabd2: 1.1 GB).
 
 ### Fixed
 

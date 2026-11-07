@@ -47,6 +47,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   version 1.2.0, and its version DOI (10.5281/zenodo.23473940). The earlier version DOIs are kept.
 - `html_comparsion.png` renamed to `html_comparison.png`.
 - plotly is imported only when the heatmap is drawn, so a run with `-gen_heatmap false` needs no plotly.
+- The Otsu threshold is computed by `flame_threshold.py`, with the values of scikit-image's
+  `threshold_otsu`; scikit-image and the unused python-Levenshtein are no longer required.
 
 ### Fixed
 

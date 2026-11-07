@@ -21,7 +21,7 @@ import tempfile
 from scipy.sparse import coo_matrix, save_npz, vstack
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfTransformer
-from skimage.filters import threshold_otsu
+from flame_threshold import threshold_otsu
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
@@ -939,13 +939,9 @@ class Flame:
             return 0.01
         scores = self.dist_mat.data
         if method == 'otsu':
-            try:
-                auto_threshold = threshold_otsu(scores)
-                print(f"Automatically determined threshold (Otsu's method): {auto_threshold:.4f}")
-                return float(auto_threshold)
-            except ImportError:
-                print("Warning: scikit-image is not installed. Falling back to percentile method.")
-                return self._determine_auto_threshold(method='percentile', percentile=percentile)
+            auto_threshold = threshold_otsu(scores)
+            print(f"Automatically determined threshold (Otsu's method): {auto_threshold:.4f}")
+            return float(auto_threshold)
         elif method == 'percentile':
             if scores.size == 0: return 0.01
             auto_threshold = np.percentile(scores, percentile)

@@ -2,8 +2,6 @@ numpy
 nltk
 plotly
 rapidfuzz
-python-Levenshtein
-scikit-image
 scikit-learn
 scipy
 tqdm

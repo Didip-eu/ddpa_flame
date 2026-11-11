@@ -310,8 +310,8 @@ class FlameGUI(tk.Tk):
         self.fetch_ids = tk.Text(frame, height=6, width=55)
         self.fetch_ids.grid(row=1, column=1, columnspan=2, sticky=tk.EW, padx=5, pady=4)
         ttk.Label(frame, text="Text:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=4)
-        ttk.Combobox(frame, textvariable=self.fetch_text, values=['tenor', 'abstract'], state='readonly',
-                     width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=4)
+        ttk.Combobox(frame, textvariable=self.fetch_text, values=list(flame_ddp.TEXT_CHOICES), state='readonly',
+                     width=22).grid(row=2, column=1, sticky=tk.W, padx=5, pady=4)
         ttk.Label(frame, text="New Corpus Folder:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=4)
         ttk.Entry(frame, textvariable=self.fetch_out, width=55).grid(row=3, column=1, sticky=tk.EW, padx=5, pady=4)
         ttk.Button(frame, text="Browse Folder...", command=self.browse_fetch_folder).grid(

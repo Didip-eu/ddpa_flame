@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +18,19 @@ TIMEOUT = 30.0
 RETRY_STATUSES = {429, 503}
 MANIFEST = "manifest.tsv"
 FETCH_RECORD = "fetch.json"
-MANIFEST_COLUMNS = ("file", "document_id", "atom_id", "year", "text_kind", "text_hash", "legacy_url")
+MANIFEST_COLUMNS = ("file", "document_id", "atom_id", "year", "text_kind", "text_hash", "legacy_url", "text_producer")
+# The machine-read tenor of a charter, by the name the search of Monasterium NG gives it.
+MACHINE_TENOR = "pred_tenor"
+# The texts each -text choice takes from a charter: of the kinds named, each it has, or only the first it has.
+TEXT_CHOICES = {
+    "tenor": (("tenor",), False),
+    MACHINE_TENOR: ((MACHINE_TENOR,), False),
+    "tenor_else_pred_tenor": (("tenor", MACHINE_TENOR), False),
+    "tenor_and_pred_tenor": (("tenor", MACHINE_TENOR), True),
+    "abstract": (("abstract",), False),
+}
+# The marks of a machine-read text that are no words of it, a doubtful line and a gap, as the search leaves them out.
+MARKS = re.compile(r"\[\?\] |\[\.\.\.\]")
 
 
 @dataclass
@@ -30,6 +43,7 @@ class Entry:
     text_kind: str
     text_hash: str
     legacy_url: str
+    text_producer: str
     text: str
 
 
@@ -96,20 +110,35 @@ def year_of(document: dict) -> str | None:
     return start if len(start) == 4 and start.isdigit() else None
 
 
-def file_name(document_id: str, year: str | None) -> str:
-    """The corpus file name: the year or "undated" first, so FLAME reads the year from it."""
-    return f"{year or 'undated'}_{document_id}.txt"
+def file_name(document_id: str, year: str | None, producer: str = "") -> str:
+    """The corpus file name: the year or "undated" first, so FLAME reads the year from it; a machine-read text ends in
+    its producer."""
+    return f"{year or 'undated'}_{document_id}{f'_{producer}' if producer else ''}.txt"
 
 
-def entry_of(document: dict, text_kind: str) -> Entry | None:
-    """The corpus entry of a document's text of one kind, or None when it has no such text."""
-    text = next((text for text in document["texts"] if text["kind"] == text_kind and text["body"].strip()), None)
-    if text is None:
-        return None
+def read_text(body: str) -> str:
+    """A machine-read text as FLAME compares it: without the marks, the spaces of each line made single."""
+    return "\n".join(" ".join(line.split()) for line in MARKS.sub("", body).splitlines())
+
+
+def texts_of(document: dict, kind: str) -> list[dict]:
+    """The document's texts of one kind that hold words; the machine-read tenor comes from its machine texts, where a
+    reading (every line read, without a main text) is not one."""
+    if kind == MACHINE_TENOR:
+        return [text for text in document.get("machine_texts", []) if text["kind"] == "tenor" and text["body"].strip()]
+    return [text for text in document["texts"] if text["kind"] == kind and text["body"].strip()]
+
+
+def entries_of(document: dict, text_kind: str) -> list[Entry]:
+    """The corpus entries of a document for one text choice; none when it has no such text."""
+    kinds, each = TEXT_CHOICES[text_kind]
+    found = [(kind, text) for kind in kinds for text in texts_of(document, kind)]
     year = year_of(document)
-    return Entry(file=file_name(document["id"], year), document_id=document["id"], atom_id=document["atom_id"],
-                 year=year or "", text_kind=text_kind, text_hash=text["hash"], legacy_url=document["legacy_url"] or "",
-                 text=text["body"])
+    return [Entry(file=file_name(document["id"], year, text.get("producer", "")), document_id=document["id"],
+                  atom_id=document["atom_id"], year=year or "", text_kind=kind, text_hash=text["hash"],
+                  legacy_url=document["legacy_url"] or "", text_producer=text.get("producer", ""),
+                  text=read_text(text["body"]) if kind == MACHINE_TENOR else text["body"])
+            for kind, text in (found if each else found[:1])]
 
 
 def fetch(api: Api, values: list[str], text_kind: str, workers: int) -> Fetch:
@@ -122,11 +151,11 @@ def fetch(api: Api, values: list[str], text_kind: str, workers: int) -> Fetch:
         if document is None:
             result.not_found.append(document_id)
             continue
-        entry = entry_of(document, text_kind)
-        if entry is None:
+        entries = entries_of(document, text_kind)
+        if not entries:
             result.without_text.append(document_id)
             continue
-        result.entries.append(entry)
+        result.entries.extend(entries)
     return result
 
 
@@ -188,7 +217,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="document ids, atom ids or Monasterium URLs, separated by spaces")
     parser.add_argument("-ids_file", default="", help="a file of such values, one or more per line, # for comments")
     parser.add_argument("-out", required=True, help="the new folder the texts are written to")
-    parser.add_argument("-text", default="tenor", choices=("tenor", "abstract"), help="the kind of text (default: tenor)")
+    parser.add_argument("-text", default="tenor", choices=tuple(TEXT_CHOICES),
+                        help="the text of each charter (default: tenor): tenor, pred_tenor (the machine transcription), "
+                             "tenor_else_pred_tenor, tenor_and_pred_tenor (both, as two files) or abstract")
     parser.add_argument("-workers", type=int, default=4, help="parallel document requests (default: 4)")
     parser.add_argument("-dry_run", action="store_true", help="fetch and report, write nothing")
     return parser.parse_args(argv)

@@ -37,10 +37,13 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   merges and tokens equal `tokenizers` 0.23 with the `Whitespace` pre-tokenizer on 2 x 1,500 FSDB
   tenors at vocabulary sizes 300 to 8,000.
 - `flame_ddp.py` and the GUI tab *4. Fetch from Monasterium*: charters from the Monasterium NG
-  API by document id, atom id or URL, one file per text, with `manifest.tsv` and `fetch.json`.
+  API by document id, atom id or URL, one file per text, with `manifest.tsv` and `fetch.json`. The text is the
+  tenor, the abstract or the machine transcription, the tenor else the machine transcription, or both; a
+  machine transcription is written without its doubt marks and named by its producer.
 - `flame/web.py`: a run on texts given as JSON, for a browser worker; its results come as one ZIP
   with FLAME's files, `pairs.tsv` with document names, and `run.json` with the parameters, the
-  time and the memory of the run.
+  time and the memory of the run. With `self_pairs` false, `pairs.tsv` leaves out the pairs of two
+  texts of one document.
 - `pyproject.toml`: FLAME installs as the package `flame` with the command `flame`, as a pure-Python
   wheel; the extras `native`, `heatmap` and `ddp` add rapidfuzz and tokenizers, plotly, and httpx.
   `requirements.txt` installs it with all three.

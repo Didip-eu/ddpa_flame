@@ -114,11 +114,15 @@ python flame.py -input_path ./corpus
 ```
 
 - `-ids_file` reads the values from a file, one or more per line, `#` for comments.
-- `-text` picks the text: `tenor` (default) or `abstract`. A charter without that text is skipped and listed.
+- `-text` picks the text: `tenor` (default); `pred_tenor`, the machine transcription; `tenor_else_pred_tenor`,
+  the tenor where a charter has one, else its machine transcription; `tenor_and_pred_tenor`, both, as two files;
+  or `abstract`. A charter without that text is skipped and listed. A machine transcription is written as the
+  search reads it, without the marks of doubtful lines (`[?]`) and of gaps (`[...]`).
 - `-dry_run` fetches and reports, and writes nothing. The output folder must be new or empty.
-- Each text is written as `<year>_<document id>.txt`, or `undated_<document id>.txt`. `manifest.tsv`
-  gives the atom id, the year, the text hash and the Monasterium URL per file, so every name in the
-  reports leads back to its charter; `fetch.json` records the API, its version and what was not found.
+- Each text is written as `<year>_<document id>.txt`, or `undated_<document id>.txt`; a machine transcription
+  ends in its producer, as `<year>_<document id>_<producer>.txt`. `manifest.tsv` gives the atom id, the year,
+  the kind, the text hash, the Monasterium URL and the producer of a machine transcription per file, so every
+  name in the reports leads back to its charter; `fetch.json` records the API, its version and what was not found.
 
 In the GUI, the tab **4. Fetch from Monasterium** does the same and then sets the folder as the
 primary corpus path.

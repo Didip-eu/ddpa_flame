@@ -10,24 +10,32 @@ from flame import SimilarityVisualizer
 DATED = "3264c4b39042b535c9d2ba2198aa6b70"
 UNDATED = "43616f9f54c66a1663fd66e58ef7baf6"
 NO_TENOR = "ea2b6277b87e71b2c95786f7bd8807cc"
+READ = "6872ea1c5a4b6a1747264363ca97e045"
 GONE = "00000000000000000000000000000000"
 URL = "https://www.monasterium.net/mom/AT-X/Y/1/charter"
 
 
-def document(document_id: str, date_from: str | None, texts: list[dict]) -> dict:
+def document(document_id: str, date_from: str | None, texts: list[dict], machine_texts: list[dict] = ()) -> dict:
     return {"id": document_id, "atom_id": f"tag:www.monasterium.net,2011:/charter/X/{document_id}",
-            "legacy_url": None, "dates": {"kind": "stated", "from": date_from}, "texts": texts}
+            "legacy_url": None, "dates": {"kind": "stated", "from": date_from}, "texts": texts,
+            "machine_texts": list(machine_texts)}
 
 
 def tenor(body: str) -> dict:
     return {"id": "t", "kind": "tenor", "language": None, "body": body, "hash": "h-" + body[:4]}
 
 
+def machine(document_id: str, kind: str = "tenor") -> dict:
+    return {"id": f"{document_id}:{kind}:reader", "kind": kind, "producer": "reader",
+            "body": "[?] In nomine  sancte [...]\ntrinitatis", "hash": "h-read"}
+
+
 DOCUMENTS = {
-    DATED: document(DATED, "1182-02-24", [tenor("In nomine sancte et individue trinitatis")]),
+    DATED: document(DATED, "1182-02-24", [tenor("In nomine sancte et individue trinitatis")], [machine(DATED)]),
+    READ: document(READ, "1300", [], [machine(READ)]),
     UNDATED: document(UNDATED, None, [tenor("Nos Rudolfus dei gratia")]),
     NO_TENOR: document(NO_TENOR, "1300", [{"id": "a", "kind": "abstract", "language": "de", "body": "Regest",
-                                           "hash": "h"}]),
+                                           "hash": "h"}], [machine(NO_TENOR, "reading")]),
 }
 
 
@@ -37,7 +45,7 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "ok", "version": "0.6.0"})
     if path == "documents/resolve":
         values = json.loads(request.content)["values"]
-        resolved = {URL: DATED, DATED: DATED, UNDATED: UNDATED, NO_TENOR: NO_TENOR, GONE: GONE}
+        resolved = {URL: DATED, DATED: DATED, UNDATED: UNDATED, NO_TENOR: NO_TENOR, READ: READ, GONE: GONE}
         return httpx.Response(200, json={"data": [{"value": value, "id": resolved.get(value)} for value in values]})
     document_id = path.removeprefix("documents/")
     if document_id in DOCUMENTS:
@@ -68,6 +76,26 @@ def test_written_corpus_holds_texts_manifest_and_record(api, tmp_path):
         rows = list(csv.DictReader(manifest, delimiter="\t"))
     assert [(row["document_id"], row["year"]) for row in rows] == [(DATED, "1182"), (UNDATED, "")]
     assert json.loads((tmp_path / flame_ddp.FETCH_RECORD).read_text())["written"] == 2
+
+
+@pytest.mark.parametrize("text_kind, files", [
+    ("tenor", [f"1182_{DATED}.txt", f"undated_{UNDATED}.txt"]),
+    ("pred_tenor", [f"1182_{DATED}_reader.txt", f"1300_{READ}_reader.txt"]),
+    ("tenor_else_pred_tenor", [f"1182_{DATED}.txt", f"undated_{UNDATED}.txt", f"1300_{READ}_reader.txt"]),
+    ("tenor_and_pred_tenor", [f"1182_{DATED}.txt", f"1182_{DATED}_reader.txt", f"undated_{UNDATED}.txt", f"1300_{READ}_reader.txt"]),
+    ("abstract", [f"1300_{NO_TENOR}.txt"]),
+])
+def test_each_text_choice_takes_its_texts_and_a_reading_none(api, text_kind, files):
+    result = flame_ddp.fetch(api, [DATED, UNDATED, READ, NO_TENOR], text_kind, workers=1)
+    assert [entry.file for entry in result.entries] == files
+
+
+def test_a_machine_transcription_is_written_without_its_marks_and_named_by_its_producer(api, tmp_path):
+    flame_ddp.write_corpus(tmp_path, flame_ddp.fetch(api, [DATED], "tenor_and_pred_tenor", workers=1))
+    assert (tmp_path / f"1182_{DATED}_reader.txt").read_text() == "In nomine sancte\ntrinitatis"
+    with open(tmp_path / flame_ddp.MANIFEST) as manifest:
+        rows = list(csv.DictReader(manifest, delimiter="\t"))
+    assert [(row["text_kind"], row["text_producer"]) for row in rows] == [("tenor", ""), ("pred_tenor", "reader")]
 
 
 def test_flame_reads_the_year_of_the_file_name_not_of_the_id():

@@ -20,8 +20,9 @@ def _write_corpus(directory: str, texts: list[dict]) -> None:
             f.write(text['body'])
 
 
-def _pairs_tsv(spans_path: str, names: dict) -> str:
-    """The pairs above the threshold, highest score first, with the documents' ids and names."""
+def _pairs_tsv(spans_path: str, names: dict, documents: dict, self_pairs: bool) -> str:
+    """The pairs above the threshold, highest score first, with the documents' ids and names; without the pairs of two
+    texts of one document unless self_pairs."""
     rows = ['id_1\tname_1\tid_2\tname_2\tscore\tcluster']
     if not os.path.exists(spans_path):
         return '\n'.join(rows) + '\n'
@@ -30,6 +31,8 @@ def _pairs_tsv(spans_path: str, names: dict) -> str:
     for pair in sorted(pairs, key=lambda pair: -pair['score']):
         first = LEADING_YEAR.sub('', pair['file_1'].rsplit('.', 1)[0])
         second = LEADING_YEAR.sub('', pair['file_2'].rsplit('.', 1)[0])
+        if not self_pairs and documents.get(first, first) == documents.get(second, second):
+            continue
         cluster = pair.get('cluster_id')
         rows.append('\t'.join([first, names.get(first, first), second, names.get(second, second),
                                str(pair['score']), '' if cluster is None else str(cluster)]))
@@ -49,10 +52,14 @@ def run(input_json: str, options_json: str, directory: str) -> str:
     """Runs FLAME on the texts of input_json in a new directory and returns, as JSON, the paths of
     the results ZIP and of similarity_spans.jsonl.
 
-    input_json holds `a` and `b` (null or a list): texts as {id, year, body}; `names`, document
-    names by id; and `record`, fields for run.json. options_json holds FLAME parameters by name."""
+    input_json holds `a` and `b` (null or a list): texts as {id, year, body}, each with the id of
+    its `document` where several texts come from one; `names`, document names by id; `self_pairs`,
+    false to leave the pairs of two texts of one document out of pairs.tsv; and `record`, fields for
+    run.json. options_json holds FLAME parameters by name."""
     given = json.loads(input_json)
     options = json.loads(options_json)
+    self_pairs = given.get('self_pairs', True)
+    documents = {text['id']: text.get('document', text['id']) for text in given['a'] + (given.get('b') or [])}
     first, second, out = (os.path.join(directory, part) for part in ('a', 'b', 'out'))
     _write_corpus(first, given['a'])
     argv = ['-input_path', first]
@@ -71,13 +78,14 @@ def run(input_json: str, options_json: str, directory: str) -> str:
     finally:
         os.chdir(previous)
     record = {**given.get('record', {}), 'texts': {'first': len(given['a']), 'second': len(given.get('b') or [])},
-              'options': options, 'seconds': round(time.perf_counter() - started, 1), 'memory_bytes': _memory_bytes()}
+              'options': options, 'self_pairs': self_pairs, 'seconds': round(time.perf_counter() - started, 1),
+              'memory_bytes': _memory_bytes()}
 
     spans = os.path.join(out, 'similarity_spans.jsonl')
     archive = os.path.join(directory, 'results.zip')
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zipped:
         for name in sorted(os.listdir(out)):
             zipped.write(os.path.join(out, name), name)
-        zipped.writestr('pairs.tsv', _pairs_tsv(spans, given.get('names', {})))
+        zipped.writestr('pairs.tsv', _pairs_tsv(spans, given.get('names', {}), documents, self_pairs))
         zipped.writestr('run.json', json.dumps(record, ensure_ascii=False, indent=2) + '\n')
     return json.dumps({'archive': archive, 'spans': spans if os.path.exists(spans) else None})

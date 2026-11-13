@@ -43,3 +43,20 @@ def test_pairs_of_two_texts_of_one_document_leave_pairs_tsv_unless_asked_for(tmp
     left, left_recorded = pairs(False)
     assert ("d1:tenor", "d1:tenor:reader") in kept and kept_recorded is True
     assert left == kept - {("d1:tenor", "d1:tenor:reader")} and left and left_recorded is False
+
+
+def test_manifest_names_each_file_with_its_text_document_and_page(tmp_path):
+    texts = [{**TEXTS[0], "document": "d1", "kind": "tenor"},
+             {**TEXTS[1], "document": "d2", "kind": "pred_tenor", "producer": "reader"}]
+    given = {"a": texts, "b": [texts[0], {**TEXTS[2], "kind": "tenor"}], "names": {"a1": "Charter one"},
+             "page_url": "https://example.org/documents/{document}"}
+    options = {"min_text_length": 20, "similarity_threshold": 0.1, "gen_heatmap": False}
+    paths = json.loads(web.run(json.dumps(given), json.dumps(options), str(tmp_path / "run")))
+    with zipfile.ZipFile(paths["archive"]) as zipped:
+        rows = [line.split("\t") for line in zipped.read("manifest.tsv").decode().splitlines()]
+    assert rows == [
+        ["file", "text_id", "document_id", "name", "year", "text_kind", "text_producer", "page_url"],
+        ["1182_a1.txt", "a1", "d1", "Charter one", "1182", "tenor", "", "https://example.org/documents/d1"],
+        ["undated_a2.txt", "a2", "d2", "d2", "", "pred_tenor", "reader", "https://example.org/documents/d2"],
+        ["1290_a3.txt", "a3", "a3", "a3", "1290", "tenor", "", "https://example.org/documents/a3"],
+    ]

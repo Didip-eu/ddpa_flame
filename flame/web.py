@@ -1,23 +1,49 @@
 """FLAME in a browser worker: a run on texts given as JSON, its results as one ZIP."""
 
+import csv
+import io
 import json
 import os
 import re
 import time
 import zipfile
+from urllib.parse import quote
 
 from .analysis import parse_args, run as run_analysis
 
 LEADING_YEAR = re.compile(r'^(?:-?\d{4}|undated)_')
+# The columns of flame_ddp.py's manifest.tsv that a run on given texts can fill, with the text id, the document's
+# name and its page.
+MANIFEST_COLUMNS = ('file', 'text_id', 'document_id', 'name', 'year', 'text_kind', 'text_producer', 'page_url')
+
+
+def _file_name(text: dict) -> str:
+    """The name of a text's file, from which FLAME reads its year."""
+    return f"{text.get('year') or 'undated'}_{text['id']}.txt"
 
 
 def _write_corpus(directory: str, texts: list[dict]) -> None:
     """One file per text, named so that FLAME reads its year from the name."""
     os.makedirs(directory)
     for text in texts:
-        name = f"{text.get('year') or 'undated'}_{text['id']}.txt"
-        with open(os.path.join(directory, name), 'w', encoding='utf-8', newline='') as f:
+        with open(os.path.join(directory, _file_name(text)), 'w', encoding='utf-8', newline='') as f:
             f.write(text['body'])
+
+
+def _manifest_tsv(texts: list[dict], names: dict, page_url: str) -> str:
+    """One row per text file with its text, its document and the document's page; page_url holds {document} where
+    the document id goes."""
+    rows = {}
+    for text in texts:
+        document = text.get('document', text['id'])
+        page = page_url.replace('{document}', quote(document, safe='')) if page_url else ''
+        rows.setdefault(_file_name(text), [text['id'], document, names.get(text['id'], document), text.get('year') or '',
+                                           text.get('kind', ''), text.get('producer', ''), page])
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter='\t', lineterminator='\n')
+    writer.writerow(MANIFEST_COLUMNS)
+    writer.writerows([file, *row] for file, row in rows.items())
+    return out.getvalue()
 
 
 def _pairs_tsv(spans_path: str, names: dict, documents: dict, self_pairs: bool) -> str:
@@ -53,9 +79,10 @@ def run(input_json: str, options_json: str, directory: str) -> str:
     the results ZIP and of similarity_spans.jsonl.
 
     input_json holds `a` and `b` (null or a list): texts as {id, year, body}, each with the id of
-    its `document` where several texts come from one; `names`, document names by id; `self_pairs`,
-    false to leave the pairs of two texts of one document out of pairs.tsv; and `record`, fields for
-    run.json. options_json holds FLAME parameters by name."""
+    its `document` where several texts come from one, and its `kind` and `producer` where known; `names`,
+    document names by text id; `page_url`, the address of a document's page with {document} for its id, for
+    manifest.tsv; `self_pairs`, false to leave the pairs of two texts of one document out of pairs.tsv; and
+    `record`, fields for run.json. options_json holds FLAME parameters by name."""
     given = json.loads(input_json)
     options = json.loads(options_json)
     self_pairs = given.get('self_pairs', True)
@@ -87,5 +114,7 @@ def run(input_json: str, options_json: str, directory: str) -> str:
         for name in sorted(os.listdir(out)):
             zipped.write(os.path.join(out, name), name)
         zipped.writestr('pairs.tsv', _pairs_tsv(spans, given.get('names', {}), documents, self_pairs))
+        zipped.writestr('manifest.tsv', _manifest_tsv(given['a'] + (given.get('b') or []), given.get('names', {}),
+                                                      given.get('page_url', '')))
         zipped.writestr('run.json', json.dumps(record, ensure_ascii=False, indent=2) + '\n')
     return json.dumps({'archive': archive, 'spans': spans if os.path.exists(spans) else None})

@@ -47,8 +47,8 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   tenor, the abstract or the machine transcription, the tenor else the machine transcription, or both; a
   machine transcription is written without its doubt marks and named by its producer.
 - `flame/web.py`: a run on texts given as JSON, for a browser worker; its results come as one ZIP
-  with FLAME's files, `pairs.tsv` with document names, and `run.json` with the parameters, the
-  time and the memory of the run. With `self_pairs` false, `pairs.tsv` leaves out the pairs of two
+  with FLAME's files, `pairs.tsv` with document names, `manifest.tsv` with the text, document, name
+  and page of each file, and `run.json` with the parameters, the time and the memory of the run. With `self_pairs` false, `pairs.tsv` leaves out the pairs of two
   texts of one document.
 - `pyproject.toml`: FLAME installs as the package `flame` with the command `flame`, as a pure-Python
   wheel; the extras `native`, `heatmap` and `ddp` add rapidfuzz and tokenizers, plotly, and httpx.

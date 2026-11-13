@@ -36,8 +36,9 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   file, the year and character offsets into the file; `kwic_tei.xml` carries the same spans as a TEI
   standoff annotation. Built from the clustering's own windows, no new similarity. Ported from FLAME
   (commit 450c903); `locate_document()` and `token_char_span()` are shared with `similarity_spans.jsonl`.
-- `flame/fuzz.py`: the Levenshtein distance and Indel ratio in pure Python, used where rapidfuzz is
-  not installed; equal to rapidfuzz on 200,000 random string pairs.
+- `flame/fuzz.py`: the Levenshtein distance, the Indel ratio and the partial ratio in pure Python, used
+  where rapidfuzz is not installed; equal to rapidfuzz on 200,000 random string pairs, the ratio up to
+  the last bit of the float.
 - `flame/bpe.py`: a BPE trainer in pure Python, used where `tokenizers` is not installed; vocabulary,
   merges and tokens equal `tokenizers` 0.23 with the `Whitespace` pre-tokenizer on 2 x 1,500 FSDB
   tenors at vocabulary sizes 300 to 8,000.

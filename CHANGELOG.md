@@ -31,6 +31,11 @@ Documentation, benchmark packaging, metadata, and one report-layer fix. The simi
   alignment per pair as character offsets into each file (`label_1` / `label_2` as
   `[start, end, LABEL]`, plus `segments` linking the two sides), for integration with other
   tools. Existing outputs are unchanged.
+- KWIC export (opt-in, `gen_kwic`, `kwic_query`, `kwic_context`, `kwic_scope`, `kwic_query_fuzz`, `kwic_tei`;
+  GUI frame on the reports tab): `kwic.tsv` has one row per occurrence of a formula, in context, with the
+  file, the year and character offsets into the file; `kwic_tei.xml` carries the same spans as a TEI
+  standoff annotation. Built from the clustering's own windows, no new similarity. Ported from FLAME
+  (commit 450c903); `locate_document()` and `token_char_span()` are shared with `similarity_spans.jsonl`.
 - `flame/fuzz.py`: the Levenshtein distance and Indel ratio in pure Python, used where rapidfuzz is
   not installed; equal to rapidfuzz on 200,000 random string pairs.
 - `flame/bpe.py`: a BPE trainer in pure Python, used where `tokenizers` is not installed; vocabulary,

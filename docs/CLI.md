@@ -51,6 +51,12 @@ the defaults, which live in `DEFAULT_PARAMS` in `flame.py`.
 | `gen_spans_jsonl` | `False` | Generate `similarity_spans.jsonl`: per pair, the matches, bridges, variants, and insertions as character offsets into each file. Off by default; `-gen_spans_jsonl` turns it on. See [Outputs](../README.md#outputs). |
 | `gen_heatmap` | `True` | Generate an interactive Plotly similarity heatmap HTML file. Skipped, with a printed note, when the similarity matrix reaches 2000 documents in either dimension — a corpus that large is read better from the cluster and pair reports. |
 | `gen_clusters` | `True` | Generate the clustering (recurring legal formulas) report. **Also adds a `ClusterID` column to `similarity_summary.tsv` and `linguistic_variations.tsv`** — see the note under [Outputs](../README.md#outputs). |
+| `gen_kwic` | `False` | Generate `kwic.tsv`: one row per occurrence of a formula (the cluster's window in each charter it names), with context, file, year, token range and character offsets. Built from the clustering, so it needs `gen_clusters`. See [KWIC export](../README.md#kwic-export). |
+| `kwic_context` | `5` | Words of context on each side of the keyword; punctuation between them is carried along but not counted. |
+| `kwic_query` | `''` | The formula to look for, as a phrase. Matched in the spelling-folded space (`vnd` = `und`). Empty exports every cluster. |
+| `kwic_query_fuzz` | `0.85` | How close a cluster's core must be to the query when it does not contain it verbatim (0–1); `1.0` demands verbatim containment. |
+| `kwic_scope` | `auto` | What the `Keyword` column holds: `phrase` (the queried phrase inside the window), `cluster` (the whole window), or `auto` (`phrase` with a query, `cluster` without). |
+| `kwic_tei` | `False` | Also write `kwic_tei.xml`: the same occurrences as a TEI standoff annotation with RFC 5147 character ranges. |
 
 ## Command-Line Interface (CLI)
 
